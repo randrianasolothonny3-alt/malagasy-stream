@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: bokolo
+    env: python
+    plan: free
+    envVars:
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: /opt/render/project/.playwright
+    buildCommand: "pip install -r requirements.txt && python -m playwright install --with-deps chromium"
+    startCommand: "gunicorn app:app --timeout 600 --workers 1 --threads 8 --bind 0.0.0.0:$PORT"
