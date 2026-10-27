@@ -1,3 +1,4 @@
+import importlib.util
 import json
 import os
 import re
@@ -6,6 +7,29 @@ import subprocess
 import sys
 import threading
 import uuid
+
+# Sur un clone fraîchement récupéré (autre PC, autre dépôt Git), les paquets
+# du projet (Flask, Playwright, ...) ne sont pas encore installés. Plutôt que
+# de planter avec un ModuleNotFoundError peu clair dès la première ligne
+# d'import, on les installe automatiquement depuis requirements.txt. Doit
+# s'exécuter avant tout import tiers (requests/flask/playwright plus bas).
+def _paquets_manquants():
+    modules = ("flask", "requests", "playwright", "colorama")
+    return [module for module in modules if importlib.util.find_spec(module) is None]
+
+
+def _installer_dependances():
+    missing = _paquets_manquants()
+    if not missing:
+        return
+    requirements_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "requirements.txt")
+    cible = ["-r", requirements_path] if os.path.isfile(requirements_path) else missing
+    print(f"Modules manquants ({', '.join(missing)}), installation en cours...")
+    subprocess.run([sys.executable, "-m", "pip", "install", *cible], check=True)
+    importlib.invalidate_caches()
+
+
+_installer_dependances()
 
 # Sur Render (et tout hébergeur où le cache Playwright du build peut ne pas
 # se retrouver dans le conteneur d'exécution), on vérifie au démarrage que
