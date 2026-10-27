@@ -4,7 +4,6 @@ Démarre le serveur Flask dans un thread en arrière-plan, puis ouvre une
 véritable fenêtre desktop (pywebview) affichant l'interface. Fermer la
 fenêtre arrête aussi le serveur.
 """
-import importlib.util
 import os
 import subprocess
 import sys
@@ -16,14 +15,9 @@ import time
 # sys.executable n'est de toute façon pas un interpréteur Python utilisable
 # avec pip, donc on ne tente ça qu'en lancement depuis le code source.
 if not getattr(sys, "frozen", False):
-    _modules = ("flask", "requests", "playwright", "colorama", "webview")
-    _missing = [module for module in _modules if importlib.util.find_spec(module) is None]
-    if _missing:
-        print(f"Modules manquants ({', '.join(_missing)}), installation en cours...")
-        _requirements_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "requirements.txt")
-        _cible = ["-r", _requirements_path] if os.path.isfile(_requirements_path) else _missing
-        subprocess.run([sys.executable, "-m", "pip", "install", *_cible], check=True)
-        importlib.invalidate_caches()
+    from bootstrap_deps import ensure_installed
+
+    ensure_installed("flask", "requests", "playwright", "colorama", "webview")
 
 # En .exe (PyInstaller), le driver Playwright embarqué cherche les navigateurs
 # à côté de lui-même (dans le dossier temporaire d'extraction) au lieu du
