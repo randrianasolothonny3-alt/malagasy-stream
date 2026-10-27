@@ -42,14 +42,37 @@ def ensure_installed(*modules):
     missing = [module for module in modules if importlib.util.find_spec(module) is None]
     if not missing:
         return
-    specs = [_requirement_spec(module) for module in missing]
-    print(f"Modules manquants ({', '.join(missing)}), installation en cours...")
-    try:
-        subprocess.run([sys.executable, "-m", "pip", "install", *specs], check=True)
-    except subprocess.CalledProcessError:
-        print(
-            "Échec de l'installation automatique. Essayez manuellement : "
-            f"{sys.executable} -m pip install {' '.join(specs)}"
-        )
-        raise
-    importlib.invalidate_caches()
+
+    # Un module à la fois: pip échoue parfois sur Windows en essayant de
+    # réécrire le script .exe d'UN SEUL paquet (ex: "flask.exe -> .deleteme",
+    # WinError 2 — bug connu de pip, souvent lié à un antivirus qui verrouille
+    # brièvement le fichier qu'il vient d'écrire) alors que le paquet lui-même
+    # a bien été copié dans site-packages. Grouper l'installation ferait
+    # échouer tous les modules à cause d'un seul, et on ignorerait que l'import
+    # fonctionne déjà malgré le code de sortie non nul de pip.
+    still_missing = []
+    for module in missing:
+        spec = _requirement_spec(module)
+        print(f"Module manquant ({module}), installation en cours...")
+        subprocess.run([sys.executable, "-m", "pip", "install", spec])
+        importlib.invalidate_caches()
+        if importlib.util.find_spec(module) is None:
+            still_missing.append((module, spec))
+
+    if not still_missing:
+        return
+
+    specs_hint = "\n".join(f"  {sys.executable} -m pip install {spec}" for _, spec in still_missing)
+    print(
+        "Installation automatique incomplète pour: "
+        + ", ".join(module for module, _ in still_missing)
+        + ".\nSi pip signale une erreur Windows du type "
+        "\"Failed to write executable\" / \"WinError 2 ... .deleteme\", "
+        "mettez d'abord pip à jour puis réessayez:\n"
+        f"  {sys.executable} -m pip install --upgrade pip\n"
+        "Sinon, installez manuellement ce qui manque encore:\n" + specs_hint
+    )
+    raise RuntimeError(
+        "Modules toujours manquants après installation: "
+        + ", ".join(module for module, _ in still_missing)
+    )
