@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Malagasy-Stream</title>
+<link rel="icon" type="image/png" href="/static/logo.png">
 <script>
   // Thème clair par défaut: on n'applique data-theme="dark" que si l'utilisateur
   // l'a choisi précédemment — fait avant le CSS pour éviter un flash du mauvais thème.
@@ -91,20 +92,8 @@
     top: 0;
     height: 100vh;
   }
-  .sidebar-brand { display: flex; align-items: center; gap: 0.7rem; padding: 0.3rem 0.4rem 1.3rem; }
-  .brand-mark {
-    display: inline-grid;
-    place-items: center;
-    width: 2.3rem;
-    height: 2.3rem;
-    flex: 0 0 auto;
-    border: 1px solid rgba(0, 200, 83, 0.3);
-    border-radius: 11px;
-    background: linear-gradient(145deg, rgba(0, 200, 83, 0.22), rgba(232, 17, 45, 0.12));
-    font-size: 1.05rem;
-  }
-  .brand-name { font-weight: 750; font-size: 1.02rem; letter-spacing: -0.02em; }
-  .brand-sub { font-size: 0.64rem; letter-spacing: 0.12em; color: var(--muted); margin-top: 0.1rem; }
+  .sidebar-brand { display: flex; align-items: center; padding: 0.3rem 0.4rem 1.3rem; }
+  .brand-logo { width: 100%; height: auto; object-fit: contain; }
   .sidebar-label {
     font-size: 0.68rem;
     letter-spacing: 0.1em;
@@ -704,6 +693,34 @@
   }
   .catalogue-meta { font-size: 0.72rem; color: var(--muted); }
   .catalogue-link { font-size: 0.72rem; color: var(--cyan-text); margin-top: 0.3rem; font-weight: 600; }
+  .fav-btn.active { background: rgba(245, 180, 0, 0.18); border-color: rgba(245, 180, 0, 0.5); color: #f5b400; }
+  .fav-card { transition: opacity 200ms ease, transform 200ms ease; }
+  .fav-card-removing { opacity: 0; transform: scale(0.9); pointer-events: none; }
+  .fav-remove-btn {
+    position: absolute;
+    top: 0.45rem;
+    right: 0.45rem;
+    width: 1.9rem;
+    height: 1.9rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid rgba(245, 180, 0, 0.5);
+    background: rgba(0, 0, 0, 0.6);
+    color: #f5b400;
+    font-size: 0.85rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 150ms ease, color 150ms ease, border-color 150ms ease, transform 150ms ease;
+  }
+  .fav-remove-btn:hover {
+    background: rgba(220, 38, 38, 0.9);
+    border-color: rgba(220, 38, 38, 0.95);
+    color: #fff;
+    transform: scale(1.1);
+  }
+  .fav-remove-btn:disabled { opacity: 0.6; cursor: default; transform: none; }
 
   /* ---------- site status filter (home search) ---------- */
   .site-filter { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
@@ -771,6 +788,8 @@
   .ctrl-btn:hover:not(:disabled) { background: rgba(0, 200, 83, 0.14); color: var(--cyan-text); transform: none; box-shadow: none; filter: none; }
   .ctrl-btn.play-btn { background: rgba(46, 213, 115, 0.14); border-color: rgba(46, 213, 115, 0.35); color: var(--green); }
   .ctrl-btn.play-btn:hover:not(:disabled) { background: rgba(46, 213, 115, 0.24); color: var(--green); }
+  .ctrl-btn.subtitle-btn { background: rgba(0, 194, 255, 0.12); border-color: rgba(0, 194, 255, 0.35); color: var(--cyan-text); }
+  .ctrl-btn.subtitle-btn:hover:not(:disabled) { background: rgba(0, 194, 255, 0.22); }
 
   /* ---------- video modal ---------- */
   .video-modal-overlay {
@@ -869,11 +888,7 @@
 
   <aside class="sidebar">
     <div class="sidebar-brand">
-      <span class="brand-mark" aria-hidden="true">🇲🇬</span>
-      <div>
-        <div class="brand-name">Malagasy-Stream</div>
-        <div class="brand-sub">MASTERING SUITE</div>
-      </div>
+      <img class="brand-logo" src="/static/logo.png" alt="Malagasy-Stream">
     </div>
     <div class="sidebar-label">PLATEFORME CINÉMA</div>
     <nav class="sidebar-nav" id="sidebar-nav">
@@ -895,6 +910,9 @@
       </button>
       <button type="button" class="nav-item" data-section="favorites" data-label="Favoris">
         <span class="nav-icon">⭐</span><span class="nav-label">Favoris</span>
+      </button>
+      <button type="button" class="nav-item" data-section="porno" data-label="Film +21 ans">
+        <span class="nav-icon">🔞</span><span class="nav-label">Film +21 ans</span>
       </button>
     </nav>
     <div class="sidebar-spacer"></div>
@@ -1007,6 +1025,7 @@
             <div class="actions">
               <button type="button" class="actions-link" id="select-all-btn">Tout cocher</button>
               <button type="button" class="primary" id="download-btn">⚡ Télécharger la sélection</button>
+              <button type="button" class="secondary fav-btn" id="media-favorite-btn">☆ Ajouter aux favoris</button>
               <span class="muted" id="selection-count" aria-live="polite"></span>
             </div>
           </div>
@@ -1028,6 +1047,7 @@
             <div class="quality-cards" id="film-options"></div>
             <div class="actions">
               <button type="button" class="primary" id="film-download-btn">⚡ Télécharger</button>
+              <button type="button" class="secondary fav-btn" id="film-favorite-btn">☆ Ajouter aux favoris</button>
             </div>
           </div>
 
@@ -1117,6 +1137,28 @@
           <div class="muted" id="catalogue-empty" style="display:none;">Rien de téléchargé pour l'instant — lancez un téléchargement depuis « Téléchargements ».</div>
         </div>
 
+        <div class="panel" id="porno-page" style="display:none;">
+          <h2 class="form-title">Film +21 ans</h2>
+          <p class="form-hint">Parcourez ou recherchez par mot-clé, filtrable par catégorie.</p>
+          <div class="row" style="margin-bottom:1rem;">
+            <div class="url-field">
+              <span class="url-icon" aria-hidden="true">🔎</span>
+              <input type="text" id="porno-search-input" placeholder="Rechercher une vidéo par mot-clé…">
+            </div>
+          </div>
+          <div class="site-filter" id="porno-category-filter"></div>
+          <div class="catalogue-grid catalogue-grid-5col" id="porno-grid"></div>
+          <div class="muted" id="porno-empty" style="display:none;">Chargement…</div>
+          <div class="actions" id="porno-pager"></div>
+        </div>
+
+        <div class="panel" id="favorites-panel" style="display:none;">
+          <h2 class="form-title">Favoris</h2>
+          <p class="form-hint">Films et séries mis de côté pour plus tard.</p>
+          <div class="catalogue-grid" id="favorites-grid"></div>
+          <div class="muted" id="favorites-empty" style="display:none;"></div>
+        </div>
+
         <div class="panel" id="detail-page" style="display:none;">
           <button type="button" class="actions-link" id="detail-back-btn">← Retour</button>
           <div class="media-row" style="margin-top:1.1rem;">
@@ -1155,6 +1197,24 @@
   </div>
 </div>
 
+<div class="video-modal-overlay" id="porno-password-overlay" style="display:none;">
+  <div class="panel" style="position:relative; width:min(100%, 380px); margin-bottom:0;">
+    <button type="button" class="video-modal-close" id="porno-password-close" aria-label="Fermer" style="top:-2.5rem;">✕</button>
+    <h2 class="form-title" style="margin-top:0;">🔞 Contenu +21 ans</h2>
+    <p class="form-hint">Entrez le mot de passe pour accéder à cette section.</p>
+    <form id="porno-password-form">
+      <div class="url-field">
+        <span class="url-icon" aria-hidden="true">🔒</span>
+        <input type="password" id="porno-password-input" placeholder="Mot de passe" autocomplete="current-password">
+      </div>
+      <div class="muted" id="porno-password-error" role="alert" style="display:none; color:#ff6b6b;">Mot de passe incorrect.</div>
+      <div class="actions" style="margin-top:1rem;">
+        <button type="submit" class="primary">Confirmer</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <script>
 /* ---------- thème clair / sombre ---------- */
 const themeToggleBtn = document.getElementById('theme-toggle');
@@ -1183,6 +1243,7 @@ let currentLang = null;
 let currentUrl = null;
 let currentMode = 'serie';
 let currentFilm = null;
+let currentFilmIsPorno = false;
 let selectedFilmOption = null;
 let currentQuality = 'auto';
 let libraryItems = [];
@@ -1239,6 +1300,17 @@ const dockLink = document.getElementById('dock-link');
 const cataloguePanel = document.getElementById('catalogue-panel');
 const catalogueGrid = document.getElementById('catalogue-grid');
 const catalogueEmpty = document.getElementById('catalogue-empty');
+const favoritesPanel = document.getElementById('favorites-panel');
+const favoritesGrid = document.getElementById('favorites-grid');
+const favoritesEmpty = document.getElementById('favorites-empty');
+const filmFavoriteBtn = document.getElementById('film-favorite-btn');
+const mediaFavoriteBtn = document.getElementById('media-favorite-btn');
+const pornoPage = document.getElementById('porno-page');
+const pornoGrid = document.getElementById('porno-grid');
+const pornoEmpty = document.getElementById('porno-empty');
+const pornoPager = document.getElementById('porno-pager');
+const pornoCategoryFilter = document.getElementById('porno-category-filter');
+const pornoSearchInput = document.getElementById('porno-search-input');
 const homeSearchPanel = document.getElementById('home-search-panel');
 const homeSearchInput = document.getElementById('home-search-input');
 const homeSearchBtn = document.getElementById('home-search-btn');
@@ -1266,14 +1338,17 @@ const seriesSearchInput = document.getElementById('series-search-input');
 
 const filmsState = { category: null, page: 1 };
 const seriesState = { category: null, page: 1 };
+const pornoState = { category: null, page: 1 };
 
 function hideMainPanels() {
   toolViews.style.display = 'none';
   placeholderPanel.style.display = 'none';
   cataloguePanel.style.display = 'none';
+  favoritesPanel.style.display = 'none';
   homeSearchPanel.style.display = 'none';
   filmsPage.style.display = 'none';
   seriesPage.style.display = 'none';
+  pornoPage.style.display = 'none';
   detailPage.style.display = 'none';
 }
 
@@ -1446,6 +1521,10 @@ setupListSearch(seriesSearchInput, 'serie', seriesState, seriesGrid, seriesEmpty
 /* ---------- sidebar navigation ---------- */
 document.querySelectorAll('.nav-item').forEach(item => {
   item.addEventListener('click', () => {
+    if (item.dataset.section === 'porno' && !pornoUnlocked) {
+      openPornoGate(() => item.click());
+      return;
+    }
     document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n === item));
     hideMainPanels();
     if (item.dataset.section === 'downloads') {
@@ -1459,6 +1538,17 @@ document.querySelectorAll('.nav-item').forEach(item => {
       location.hash = '#library';
       cataloguePanel.style.display = 'block';
       loadCatalogue();
+    } else if (item.dataset.section === 'favorites') {
+      location.hash = '#favorites';
+      favoritesPanel.style.display = 'block';
+      loadFavorites();
+    } else if (item.dataset.section === 'porno') {
+      location.hash = '#porno';
+      pornoPage.style.display = 'block';
+      pornoState.page = 1;
+      pornoSearchInput.value = '';
+      pornoCategoryFilter.style.display = '';
+      loadPornoList();
     } else if (item.dataset.section === 'films') {
       location.hash = '';
       filmsPage.style.display = 'block';
@@ -1559,7 +1649,9 @@ async function loadHomeHero() {
 }
 
 /* ---------- bibliothèque hors-ligne: tout ce qui est déjà téléchargé ---------- */
+let catalogueToken = 0;
 async function loadCatalogue() {
+  const myToken = ++catalogueToken;
   catalogueGrid.innerHTML = '';
   catalogueEmpty.style.display = 'block';
   catalogueEmpty.innerHTML = loaderBlock('Chargement…');
@@ -1567,6 +1659,7 @@ async function loadCatalogue() {
     const res = await fetch('/api/library');
     if (!res.ok) throw new Error('bibliothèque indisponible');
     const items = await res.json();
+    if (myToken !== catalogueToken) return; // un rechargement plus récent a déjà été lancé entre-temps
     libraryItems = items;
     if (!items.length) {
       catalogueEmpty.textContent = "Rien de téléchargé pour l'instant — lancez un téléchargement depuis « Téléchargements ».";
@@ -1576,8 +1669,125 @@ async function loadCatalogue() {
     catalogueEmpty.style.display = 'none';
     items.forEach(item => catalogueGrid.appendChild(buildCatalogueCard(item)));
   } catch (e) {
+    if (myToken !== catalogueToken) return;
     catalogueEmpty.textContent = 'Impossible de charger la bibliothèque locale.';
     catalogueEmpty.style.display = 'block';
+  }
+}
+
+/* ---------- favoris ---------- */
+let favoriteUrls = new Set();
+
+async function refreshFavoriteUrls() {
+  try {
+    const res = await fetch('/api/favorites');
+    const items = await safeJson(res);
+    favoriteUrls = new Set((items || []).map(f => f.url));
+  } catch (e) {
+    favoriteUrls = new Set();
+  }
+  updateFavoriteButtons();
+}
+
+function updateFavoriteButtons() {
+  [filmFavoriteBtn, mediaFavoriteBtn].forEach(btn => {
+    if (!btn) return;
+    const isFav = !!currentUrl && favoriteUrls.has(currentUrl);
+    btn.classList.toggle('active', isFav);
+    btn.textContent = isFav ? '★ Dans les favoris' : '☆ Ajouter aux favoris';
+  });
+}
+
+async function toggleFavorite(item) {
+  if (!item.url) return;
+  const isFav = favoriteUrls.has(item.url);
+  try {
+    if (isFav) {
+      await fetch(`/api/favorites?url=${encodeURIComponent(item.url)}`, { method: 'DELETE' });
+      favoriteUrls.delete(item.url);
+    } else {
+      await fetch('/api/favorites', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(item),
+      });
+      favoriteUrls.add(item.url);
+    }
+  } catch (e) {
+    showError("Impossible de mettre à jour les favoris.");
+    return;
+  }
+  updateFavoriteButtons();
+}
+
+function buildFavoriteCard(item) {
+  const card = document.createElement('div');
+  card.className = 'catalogue-card clickable fav-card';
+  card.title = 'Ouvrir';
+  const poster = document.createElement('div');
+  poster.className = 'catalogue-poster';
+  setPoster(poster, item.poster, item.type === 'film' ? '🎞️' : '🎬');
+  const info = document.createElement('div');
+  info.className = 'catalogue-info';
+  const typeLabel = item.type === 'film' ? 'Film' : 'Série';
+  const metaBits = [typeLabel, item.year, (typeof item.rating === 'number' ? `★ ${item.rating.toFixed(1)}` : null)].filter(Boolean);
+  info.innerHTML = `
+    <div class="catalogue-title">${item.title}</div>
+    <div class="catalogue-meta">${metaBits.join(' · ')}</div>
+    <div class="catalogue-link">Ouvrir</div>
+  `;
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'fav-remove-btn';
+  removeBtn.title = 'Retirer des favoris';
+  removeBtn.setAttribute('aria-label', 'Retirer des favoris');
+  removeBtn.textContent = '★';
+  removeBtn.addEventListener('mouseenter', () => { removeBtn.textContent = '✕'; });
+  removeBtn.addEventListener('mouseleave', () => { removeBtn.textContent = '★'; });
+  removeBtn.addEventListener('click', async (event) => {
+    event.stopPropagation();
+    if (removeBtn.disabled) return;
+    removeBtn.disabled = true;
+    await toggleFavorite(item);
+    card.classList.add('fav-card-removing');
+    card.addEventListener('transitionend', () => {
+      card.remove();
+      if (!favoritesGrid.children.length) {
+        favoritesEmpty.textContent = "Aucun favori pour l'instant — ouvrez un film ou une série puis cliquez sur « ☆ Ajouter aux favoris ».";
+        favoritesEmpty.style.display = 'block';
+      }
+    }, { once: true });
+  });
+  card.appendChild(poster);
+  card.appendChild(info);
+  card.appendChild(removeBtn);
+  card.addEventListener('click', () => selectSearchResult(item));
+  return card;
+}
+
+let favoritesToken = 0;
+async function loadFavorites() {
+  const myToken = ++favoritesToken;
+  favoritesGrid.innerHTML = '';
+  favoritesEmpty.style.display = 'block';
+  favoritesEmpty.innerHTML = loaderBlock('Chargement…');
+  try {
+    const res = await fetch('/api/favorites');
+    if (!res.ok) throw new Error('favoris indisponibles');
+    const items = await res.json();
+    if (myToken !== favoritesToken) return; // un rechargement plus récent a déjà été lancé entre-temps
+    favoriteUrls = new Set(items.map(f => f.url));
+    if (!items.length) {
+      favoritesEmpty.textContent = "Aucun favori pour l'instant — ouvrez un film ou une série puis cliquez sur « ☆ Ajouter aux favoris ».";
+      favoritesEmpty.style.display = 'block';
+      return;
+    }
+    favoritesEmpty.style.display = 'none';
+    items.forEach(item => favoritesGrid.appendChild(buildFavoriteCard(item)));
+  } catch (e) {
+    if (myToken !== favoritesToken) return;
+    favoritesEmpty.textContent = 'Impossible de charger les favoris.';
+    favoritesEmpty.style.display = 'block';
   }
 }
 
@@ -1613,6 +1823,85 @@ function buildSearchResultCard(item, showSite = true) {
   card.addEventListener('click', () => selectSearchResult(item));
   return card;
 }
+
+function buildPornoCard(item) {
+  const card = document.createElement('div');
+  card.className = 'catalogue-card clickable';
+  card.title = 'Utiliser cette vidéo';
+  const poster = document.createElement('div');
+  poster.className = 'catalogue-poster';
+  setPoster(poster, item.poster, '🎬');
+  const info = document.createElement('div');
+  info.className = 'catalogue-info';
+  const titleEl = document.createElement('div');
+  titleEl.className = 'catalogue-title';
+  titleEl.textContent = item.title;
+  const metaEl = document.createElement('div');
+  metaEl.className = 'catalogue-meta';
+  metaEl.textContent = [item.duration, item.views ? `${item.views} vues` : null].filter(Boolean).join(' · ');
+  info.appendChild(titleEl);
+  info.appendChild(metaEl);
+  card.appendChild(poster);
+  card.appendChild(info);
+  card.addEventListener('click', () => selectSearchResult({ url: item.url, type: 'film', title: item.title, poster: item.poster }));
+  return card;
+}
+
+let pornoListToken = 0;
+async function loadPornoList() {
+  const myToken = ++pornoListToken;
+  const query = pornoSearchInput.value.trim();
+  pornoCategoryFilter.style.display = query ? 'none' : '';
+  pornoGrid.innerHTML = '';
+  pornoPager.innerHTML = '';
+  pornoEmpty.style.display = 'block';
+  pornoEmpty.innerHTML = loaderBlock('Chargement…');
+  try {
+    const params = new URLSearchParams({ page: pornoState.page });
+    if (query) {
+      params.set('q', query);
+    } else if (pornoState.category) {
+      params.set('category', pornoState.category);
+    }
+    const res = await fetch(`/api/porno/search?${params.toString()}`);
+    const data = await safeJson(res);
+    if (myToken !== pornoListToken) return; // une recherche/page plus récente a déjà été lancée entre-temps
+    if (!res.ok) throw new Error(data.error || 'Indisponible.');
+    pornoState.page = data.page;
+    if (!query && data.categories) {
+      pornoState.category = data.active_category;
+      renderCategoryFilter(pornoCategoryFilter, data.categories, data.active_category, id => {
+        pornoState.category = id;
+        pornoState.page = 1;
+        loadPornoList();
+      });
+    }
+    if (!data.items.length) {
+      pornoEmpty.textContent = pornoState.page > 1 ? 'Plus aucun résultat au-delà de cette page.' : 'Aucun résultat.';
+      return;
+    }
+    pornoEmpty.style.display = 'none';
+    data.items.forEach(item => pornoGrid.appendChild(buildPornoCard(item)));
+    renderPager(pornoPager, data, p => {
+      pornoState.page = Math.max(1, p);
+      loadPornoList();
+    });
+  } catch (e) {
+    if (myToken !== pornoListToken) return;
+    pornoEmpty.textContent = 'Erreur: ' + e.message;
+  }
+}
+
+let pornoSearchDebounce = null;
+pornoSearchInput.addEventListener('input', () => {
+  clearTimeout(pornoSearchDebounce);
+  const query = pornoSearchInput.value.trim();
+  pornoState.page = 1;
+  if (!query) { loadPornoList(); return; }
+  pornoCategoryFilter.style.display = 'none';
+  if (query.length < 2) return; // une seule lettre ramènerait trop de bruit
+  pornoSearchDebounce = setTimeout(loadPornoList, 500);
+});
 
 function guessModeFromUrl(url) {
   return /saison/i.test(url) ? 'serie' : 'film';
@@ -1903,7 +2192,9 @@ extractBtn.addEventListener('click', async () => {
   extractBtn.disabled = true;
   extractBtn.innerHTML = '<span class="btn-spinner"></span> Extraction en cours…';
   try {
-    if (currentMode === 'film') {
+    if (url.includes('pornhub')) {
+      await extractPorno(url);
+    } else if (currentMode === 'film') {
       await extractFilm(url);
     } else {
       await extractSerie(url);
@@ -1930,6 +2221,7 @@ async function extractSerie(url) {
     episodesPanel.style.display = 'none';
     return;
   }
+  currentFilmIsPorno = false;
   currentEpisodes = data;
   currentUrl = url;
   renderEpisodes();
@@ -1945,7 +2237,37 @@ async function extractFilm(url) {
   });
   const data = await safeJson(res);
   if (!res.ok) { showError(data.error || 'Erreur inconnue.'); return; }
+  currentFilmIsPorno = false;
   currentFilm = data;
+  currentUrl = url;
+  renderFilm();
+  renderTopbarBadges();
+}
+
+async function extractPorno(url) {
+  episodesPanel.style.display = 'none';
+  const res = await fetch('/api/extract_porno', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({url})
+  });
+  const data = await safeJson(res);
+  if (!res.ok) { showError(data.error || 'Erreur inconnue.'); return; }
+  currentFilmIsPorno = true;
+  currentFilm = {
+    title: data.title,
+    poster: data.thumbnail,
+    rating: null,
+    synopsis: null,
+    genres: null,
+    runtime: data.duration,
+    year: null,
+    options: data.options.map(opt => ({
+      label: opt.label + (opt.premium ? ' (premium)' : ''),
+      data_url: opt.url,
+      type: opt.type,
+    })),
+  };
   currentUrl = url;
   renderFilm();
   renderTopbarBadges();
@@ -1955,7 +2277,7 @@ function renderFilm() {
   filmTitleEl.textContent = currentFilm.title;
   setPoster(filmPosterEl, currentFilm.poster, '🎞️');
   renderRatingAndSynopsis(filmRatingChip, filmSynopsisEl, currentFilm);
-  filmMetaEl.textContent = [currentFilm.genres, currentFilm.runtime].filter(Boolean).join(' · ');
+  filmMetaEl.textContent = [currentFilm.year, currentFilm.genres, currentFilm.runtime].filter(Boolean).join(' · ');
   filmOptionsEl.innerHTML = '';
   selectedFilmOption = currentFilm.options[0] || null;
   currentFilm.options.forEach((opt, i) => {
@@ -1974,19 +2296,50 @@ function renderFilm() {
     filmOptionsEl.appendChild(item);
   });
   filmPanel.style.display = 'block';
+  filmFavoriteBtn.style.display = currentFilmIsPorno ? 'none' : '';
+  updateFavoriteButtons();
+}
+
+filmFavoriteBtn.addEventListener('click', () => {
+  toggleFavorite({
+    title: currentFilm.title,
+    poster: currentFilm.poster,
+    url: currentUrl,
+    type: 'film',
+    rating: currentFilm.rating,
+    synopsis: currentFilm.synopsis,
+    genres: currentFilm.genres,
+    runtime: currentFilm.runtime,
+    year: currentFilm.year,
+  });
+});
+
+async function postFilmDownload() {
+  const endpoint = currentFilmIsPorno ? '/api/download_porno' : '/api/download_film';
+  const body = currentFilmIsPorno
+    ? {title: currentFilm.title, url: selectedFilmOption.data_url, type: selectedFilmOption.type, source_url: currentUrl}
+    : {title: currentFilm.title, data_url: selectedFilmOption.data_url, poster: currentFilm.poster, url: currentUrl};
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new Error(data.error || 'Erreur de démarrage du téléchargement.');
+  return data;
 }
 
 filmDownloadBtn.addEventListener('click', async () => {
   if (!selectedFilmOption) { showError('Aucune option de téléchargement.'); return; }
   showError('');
 
-  const res = await fetch('/api/download_film', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({title: currentFilm.title, data_url: selectedFilmOption.data_url, poster: currentFilm.poster, url: currentUrl})
-  });
-  const data = await safeJson(res);
-  if (!res.ok) { showError(data.error || 'Erreur de démarrage du téléchargement.'); return; }
+  let data;
+  try {
+    data = await postFilmDownload();
+  } catch (e) {
+    showError(e.message);
+    return;
+  }
 
   progressPanel.style.display = 'block';
   progressList.innerHTML = '';
@@ -2044,14 +2397,29 @@ function renderEpisodes() {
   const langLabel = langs.map(l => l.toUpperCase()).join(' + ');
   mediaLangChip.textContent = langLabel;
   const hostLabel = isAnimeSama ? uniqueAnimeSamaHosts() : 'Vidzy';
-  const extraBits = [currentEpisodes.genres, currentEpisodes.runtime].filter(Boolean);
+  const extraBits = [currentEpisodes.year, currentEpisodes.genres, currentEpisodes.runtime].filter(Boolean);
   const extraPrefix = extraBits.length ? extraBits.join(' · ') + ' · ' : '';
   mediaMetaEl.textContent = `${extraPrefix}${currentEpisodes[currentLang].length} épisode(s) disponible(s) en ${currentLang.toUpperCase()} · Hébergeur(s) : ${hostLabel}`;
   mediaStatusTime.textContent = 'Analyse réussie à l’instant';
 
   episodesPanel.style.display = 'block';
   updateSelectionCount();
+  updateFavoriteButtons();
 }
+
+mediaFavoriteBtn.addEventListener('click', () => {
+  toggleFavorite({
+    title: currentEpisodes.series_title,
+    poster: currentEpisodes.poster,
+    url: currentUrl,
+    type: 'serie',
+    rating: currentEpisodes.rating,
+    synopsis: currentEpisodes.synopsis,
+    genres: currentEpisodes.genres,
+    runtime: currentEpisodes.runtime,
+    year: currentEpisodes.year,
+  });
+});
 
 function uniqueAnimeSamaHosts() {
   const names = new Set();
@@ -2174,7 +2542,48 @@ videoModalClose.addEventListener('click', closeVideoModal);
 videoModalOverlay.addEventListener('click', event => { if (event.target === videoModalOverlay) closeVideoModal(); });
 
 document.addEventListener('keydown', event => {
-  if (event.key === 'Escape') closeVideoModal();
+  if (event.key === 'Escape') { closeVideoModal(); closePornoGate(); }
+});
+
+/* ---------- confirmation par mot de passe pour « Film +21 ans » ---------- */
+const PORNO_PASSWORD = '123456';
+let pornoUnlocked = false;
+let pornoGateCallback = null;
+const pornoPasswordOverlay = document.getElementById('porno-password-overlay');
+const pornoPasswordForm = document.getElementById('porno-password-form');
+const pornoPasswordInput = document.getElementById('porno-password-input');
+const pornoPasswordError = document.getElementById('porno-password-error');
+const pornoPasswordClose = document.getElementById('porno-password-close');
+
+function openPornoGate(onSuccess) {
+  if (pornoUnlocked) { onSuccess(); return; }
+  pornoGateCallback = onSuccess;
+  pornoPasswordError.style.display = 'none';
+  pornoPasswordInput.value = '';
+  pornoPasswordOverlay.style.display = 'flex';
+  setTimeout(() => pornoPasswordInput.focus(), 50);
+}
+
+function closePornoGate() {
+  pornoPasswordOverlay.style.display = 'none';
+  pornoGateCallback = null;
+}
+
+pornoPasswordClose.addEventListener('click', closePornoGate);
+pornoPasswordOverlay.addEventListener('click', event => { if (event.target === pornoPasswordOverlay) closePornoGate(); });
+
+pornoPasswordForm.addEventListener('submit', event => {
+  event.preventDefault();
+  if (pornoPasswordInput.value === PORNO_PASSWORD) {
+    pornoUnlocked = true;
+    const callback = pornoGateCallback;
+    closePornoGate();
+    if (callback) callback();
+  } else {
+    pornoPasswordError.style.display = 'block';
+    pornoPasswordInput.value = '';
+    pornoPasswordInput.focus();
+  }
 });
 
 /* ---------- detail page (séparée du catalogue, pas un modal) ---------- */
@@ -2244,8 +2653,14 @@ function renderDetail(item) {
         playBtn.title = 'Lire';
         playBtn.textContent = '▶';
         playBtn.addEventListener('click', () => openVideoModal(ep.stream_url));
+        const subtitleUrl = ep.stream_url.replace('/api/library/stream/', '/api/library/subtitle/');
+        const actions = document.createElement('div');
+        actions.style.display = 'flex';
+        actions.style.gap = '0.4rem';
+        actions.appendChild(playBtn);
+        actions.appendChild(createSubtitleButton(file => uploadSubtitle(subtitleUrl, file)));
         row.appendChild(info);
-        row.appendChild(playBtn);
+        row.appendChild(actions);
         detailEpisodeList.appendChild(row);
       });
     })
@@ -2284,8 +2699,26 @@ function routeFromHash() {
   } else if (location.hash === '#library') {
     showLibraryScreen();
     loadCatalogue();
+  } else if (location.hash === '#favorites') {
+    hideMainPanels();
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.section === 'favorites'));
+    favoritesPanel.style.display = 'block';
+    loadFavorites();
   } else if (location.hash === '#home') {
     showHomeSearchScreen();
+  } else if (location.hash === '#porno') {
+    const showPornoPage = () => {
+      hideMainPanels();
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.section === 'porno'));
+      pornoPage.style.display = 'block';
+      loadPornoList();
+    };
+    if (pornoUnlocked) {
+      showPornoPage();
+    } else {
+      location.hash = '';
+      openPornoGate(() => { location.hash = '#porno'; showPornoPage(); });
+    }
   }
 }
 window.addEventListener('hashchange', routeFromHash);
@@ -2296,6 +2729,53 @@ async function toggleResumePause(jobId, num, pause) {
   } catch (e) {
     // Le prochain sondage de progression reflétera de toute façon l'état réel du serveur.
   }
+}
+
+/* ---------- import manuel d'un sous-titre (.srt/.vtt) à côté d'une vidéo déjà téléchargée ---------- */
+function createSubtitleButton(uploadFn) {
+  const wrapper = document.createElement('span');
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.srt,.vtt';
+  input.style.display = 'none';
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'ctrl-btn subtitle-btn';
+  btn.textContent = '💬';
+  btn.title = 'Ajouter un sous-titre (.srt/.vtt)';
+  btn.addEventListener('click', () => input.click());
+
+  input.addEventListener('change', async () => {
+    const file = input.files[0];
+    input.value = '';
+    if (!file) return;
+    btn.disabled = true;
+    try {
+      await uploadFn(file);
+      btn.textContent = '✓';
+      btn.title = 'Sous-titre ajouté';
+      setTimeout(() => {
+        btn.textContent = '💬';
+        btn.title = 'Ajouter un sous-titre (.srt/.vtt)';
+        btn.disabled = false;
+      }, 1500);
+    } catch (e) {
+      btn.disabled = false;
+      showError("Impossible d'ajouter le sous-titre.");
+    }
+  });
+
+  wrapper.appendChild(btn);
+  wrapper.appendChild(input);
+  return wrapper;
+}
+
+async function uploadSubtitle(url, file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(url, { method: 'POST', body: formData });
+  if (!res.ok) throw new Error('Échec de l’envoi du sous-titre.');
 }
 
 function renderProgressControls(jobId, num, ep) {
@@ -2339,6 +2819,7 @@ function renderProgressControls(jobId, num, ep) {
       btn.title = 'Lire la vidéo';
       btn.addEventListener('click', () => openVideoModal(`/api/stream/${jobId}/${num}`));
       controls.appendChild(btn);
+      controls.appendChild(createSubtitleButton(file => uploadSubtitle(`/api/subtitle/${jobId}/${num}`, file)));
     }
   } else {
     controls.innerHTML = '';
@@ -2385,6 +2866,12 @@ function pollProgress(jobId, numbers) {
         const pct = Math.round((ep.downloaded / ep.total) * 100);
         bar.style.width = pct + '%';
         size.textContent = `${(ep.downloaded / 1048576).toFixed(1)} / ${(ep.total / 1048576).toFixed(1)} MB (${pct}%)`;
+      } else if (ep.segments_total) {
+        // HLS: pas de taille totale en octets connue à l'avance, on avance
+        // la barre selon le ratio de segments déjà téléchargés.
+        const pct = Math.round((ep.segments_done / ep.segments_total) * 100);
+        bar.style.width = pct + '%';
+        size.textContent = `${(ep.downloaded / 1048576).toFixed(1)} MB téléchargés (${pct}%)`;
       }
       if (ep.status === 'termine') {
         bar.style.width = '100%';
@@ -2469,17 +2956,18 @@ async function retrySeriesEpisode(num) {
 
 async function retryFilmDownload() {
   resetProgressRow(0);
-  const res = await fetch('/api/download_film', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({title: currentFilm.title, data_url: selectedFilmOption.data_url, poster: currentFilm.poster, url: currentUrl})
-  });
-  const data = await safeJson(res);
-  if (!res.ok) { showError(data.error || 'Erreur au redémarrage.'); return; }
+  let data;
+  try {
+    data = await postFilmDownload();
+  } catch (e) {
+    showError(e.message);
+    return;
+  }
   pollProgress(data.job_id, [0]);
 }
 
 renderTopbarBadges();
+refreshFavoriteUrls();
 if (location.hash) {
   routeFromHash();
 } else {

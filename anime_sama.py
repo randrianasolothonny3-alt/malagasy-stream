@@ -45,7 +45,7 @@ def _host_name(url):
     return netloc or "inconnu"
 
 
-def _resolve_sibnet(embed_url):
+def _resolve_sibnet(embed_url, browser=None):
     """Sibnet met le lien MP4 direct en clair dans le HTML (player.src([...])),
     pas besoin de JS. Le hotlinking exige le Referer de la page shell.php."""
     response = requests.get(embed_url, headers={"User-Agent": USER_AGENT}, timeout=20)
@@ -56,7 +56,7 @@ def _resolve_sibnet(embed_url):
     return {"url": urljoin(embed_url, match.group(1)), "referer": embed_url}
 
 
-def _resolve_sendvid(embed_url):
+def _resolve_sendvid(embed_url, browser=None):
     """Sendvid embarque généralement <source src="...mp4"> directement dans
     le HTML de la page embed, sans exécution JS nécessaire."""
     response = requests.get(embed_url, headers={"User-Agent": USER_AGENT}, timeout=20)
@@ -69,15 +69,44 @@ def _resolve_sendvid(embed_url):
     return {"url": match.group(1), "referer": embed_url}
 
 
-def _resolve_hls_only(embed_url):
-    """ansembed et smoothpre ne servent que du HLS (.m3u8) derrière un
-    lecteur JS qui génère un blob: en <video>. download_file() fait un GET
-    HTTP simple et ne sait pas assembler des segments HLS: on ne peut pas
-    proposer un lien direct ici, donc on renvoie None (host non supporté)."""
-    return None
+def _sniff_media_url(embed_url, browser, wait_ms=5000):
+    """De plus en plus d'hébergeurs (uqload, ansembed, smoothpre, et des
+    domaines-miroirs renommés dynamiquement) ne révèlent leur flux (.m3u8,
+    parfois .mp4) qu'une fois le lecteur JS exécuté: le lien n'existe pas tel
+    quel dans le HTML statique, il est généré/obfusqué. On ouvre la page dans
+    un vrai navigateur et on intercepte la première requête réseau vers un
+    flux vidéo plutôt que d'essayer de désobfusquer le JS du lecteur."""
+    if browser is None:
+        return None
+    found = {}
+
+    def on_request(request):
+        request_url = request.url
+        if "url" in found:
+            return
+        if ".m3u8" in request_url:
+            found["url"] = request_url
+            found["hls"] = True
+        elif ".mp4" in request_url.split("?")[0]:
+            found["url"] = request_url
+            found["hls"] = False
+
+    page = browser.new_page(user_agent=USER_AGENT, extra_http_headers={"Referer": "https://anime-sama.to/"})
+    page.on("request", on_request)
+    try:
+        page.goto(embed_url, wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_timeout(wait_ms)
+    except Exception:
+        pass
+    finally:
+        page.close()
+
+    if "url" not in found:
+        return None
+    return {"url": found["url"], "referer": embed_url, "hls": found["hls"]}
 
 
-def _resolve_oneupload(embed_url):
+def _resolve_oneupload(embed_url, browser=None):
     """oneupload redirige vers un sous-domaine dynamique protégé par un
     challenge JS + injecte des popups publicitaires dans des iframes; on n'a
     pas trouvé de façon fiable d'en extraire un lien direct sans risquer de
@@ -90,22 +119,27 @@ def _resolve_oneupload(embed_url):
 HOST_RESOLVERS = {
     "sibnet": _resolve_sibnet,
     "sendvid": _resolve_sendvid,
-    "ansembed": _resolve_hls_only,
-    "smoothpre": _resolve_hls_only,
+    "ansembed": _sniff_media_url,
+    "smoothpre": _sniff_media_url,
+    "uqload": _sniff_media_url,
     "oneupload": _resolve_oneupload,
 }
 
 
-def resolve_episode_download(hosts):
+def resolve_episode_download(hosts, browser=None):
     """Essayer chaque hébergeur d'un épisode dans l'ordre jusqu'à en trouver
-    un qui donne un lien direct. Les hébergeurs inconnus ou HLS-only sont
-    ignorés sans planter."""
+    un qui donne un lien exploitable. Un hébergeur sans résolveur dédié est
+    quand même tenté par interception réseau générique (si un navigateur est
+    fourni) plutôt qu'ignoré d'office: ces sites renomment régulièrement leurs
+    domaines-miroirs, les coder un par un serait sans fin."""
     for host in hosts:
         resolver = HOST_RESOLVERS.get(host["name"])
+        if resolver is None and browser is not None:
+            resolver = _sniff_media_url
         if not resolver:
             continue
         try:
-            result = resolver(host["url"])
+            result = resolver(host["url"], browser)
         except Exception:
             result = None
         if result:
@@ -244,12 +278,32 @@ class AnimeSamaScraper:
         info["title"] = info["title"] or "Titre inconnu"
         return info
 
-    def extract_episodes(self, url):
-        language = "vf" if "/vf/" in url or url.rstrip("/").endswith("/vf") else "vostfr"
+    @staticmethod
+    def _language_variant_url(url, language):
+        """URL de la même page saison dans l'autre langue (vf <-> vostfr)."""
+        other = "vostfr" if language == "vf" else "vf"
+        pattern = r"/vf(/|$)" if language == "vf" else r"/vostfr(/|$)"
+        return re.sub(pattern, f"/{other}\\1", url)
 
-        episodes_js_url = urljoin(url if url.endswith("/") else url + "/", "episodes.js")
-        response = requests.get(episodes_js_url, headers={"User-Agent": USER_AGENT}, timeout=20)
-        response.raise_for_status()
+    def _fetch_episodes_js(self, lang_url):
+        """Récupérer et parser episodes.js pour UNE page saison/langue
+        donnée. Renvoie une liste vide si cette langue n'existe pas pour
+        cette série (404) ou si la page n'a pas pu être lue, plutôt que de
+        faire échouer toute l'extraction pour l'autre langue."""
+        episodes_js_url = urljoin(lang_url if lang_url.endswith("/") else lang_url + "/", "episodes.js")
+        try:
+            # Le pare-feu du site bloque (403) les requêtes vers ce fichier JS
+            # statique sans Referer pointant vers la page saison/langue
+            # elle-même (aucun souci sur les pages HTML normales, seulement
+            # cet asset-ci).
+            response = requests.get(
+                episodes_js_url,
+                headers={"User-Agent": USER_AGENT, "Referer": lang_url},
+                timeout=20,
+            )
+            response.raise_for_status()
+        except requests.RequestException:
+            return []
 
         # Chaque tableau epsN correspond à un lecteur (hébergeur) alterné pour
         # la même liste d'épisodes: l'index dans le tableau = numéro d'épisode - 1.
@@ -261,21 +315,46 @@ class AnimeSamaScraper:
 
         episode_count = max((len(arr) for arr in host_arrays), default=0)
         episodes = []
+        seen_host_signatures = set()
         for index in range(episode_count):
             number = index + 1
             hosts = []
             for array in host_arrays:
                 if index < len(array):
                     hosts.append({"name": _host_name(array[index]), "url": array[index]})
+
+            # Le site liste parfois le même contenu sous deux numéros
+            # différents (erreur d'indexation côté site): deux épisodes dont
+            # tous les liens hébergeur sont identiques sont le même fichier,
+            # jamais deux épisodes distincts qui partageraient par coïncidence
+            # les mêmes liens (uniques par upload). On ne garde que la
+            # première occurrence pour ne pas télécharger deux fois le même
+            # contenu sous un faux numéro d'épisode.
+            signature = tuple(sorted(host["url"] for host in hosts))
+            if signature and signature in seen_host_signatures:
+                continue
+            seen_host_signatures.add(signature)
+
             episodes.append({
                 "number": number,
                 "title": f"Épisode {number}",
-                "url": url,
+                "url": lang_url,
                 "hosts": hosts,
             })
+        return episodes
+
+    def extract_episodes(self, url):
+        """Toujours essayer les deux langues (VF et VOSTFR) pour la même
+        série, peu importe laquelle des deux pages a été collée par
+        l'utilisateur: le site les héberge sur deux pages séparées
+        (.../vf/ et .../vostfr/), alors qu'on veut proposer le choix dans
+        l'appli plutôt que forcer un second copier-coller d'URL."""
+        is_vf_url = "/vf/" in url or url.rstrip("/").endswith("/vf")
+        vf_url = url if is_vf_url else self._language_variant_url(url, "vf")
+        vostfr_url = url if not is_vf_url else self._language_variant_url(url, "vostfr")
 
         meta = self._series_metadata(url)
-        result = {
+        return {
             "series_title": meta["title"],
             "poster": meta["poster"],
             "synopsis": meta["synopsis"],
@@ -283,8 +362,6 @@ class AnimeSamaScraper:
             "genres": meta["genres"],
             "runtime": None,
             "url": url,
-            "vf": [],
-            "vostfr": [],
+            "vf": self._fetch_episodes_js(vf_url),
+            "vostfr": self._fetch_episodes_js(vostfr_url),
         }
-        result[language] = episodes
-        return result

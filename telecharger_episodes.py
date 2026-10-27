@@ -1,9 +1,12 @@
 import json
 import os
 import re
+import shutil
 import struct
+import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from html import unescape
 from urllib.parse import urljoin
 
@@ -306,6 +309,26 @@ SERIES_CATEGORIES = [
     {"id": "71", "label": "K-Drama", "mode": "ajax"},
 ]
 
+# Catégories réelles du menu de pornhub.com (identifiants "c=" lus dans son
+# propre HTML, pas inventés): un sous-ensemble des plus utilisées, comme pour
+# FILM_CATEGORIES/SERIES_CATEGORIES ci-dessus.
+PORNO_CATEGORIES = [
+    {"id": "all", "label": "Tous"},
+    {"id": "29", "label": "MILF"},
+    {"id": "28", "label": "Mature"},
+    {"id": "27", "label": "Lesbienne"},
+    {"id": "35", "label": "Sodomie"},
+    {"id": "65", "label": "Ménage à trois"},
+    {"id": "80", "label": "Gangbang"},
+    {"id": "111", "label": "Japonais"},
+    {"id": "17", "label": "Black"},
+    {"id": "8", "label": "Gros seins"},
+    {"id": "24", "label": "Publique"},
+    {"id": "10", "label": "Bondage"},
+    {"id": "22", "label": "Masturbation"},
+    {"id": "86", "label": "Animé"},
+]
+
 LATEST_ITEM_RE = re.compile(
     r'<a class="short-poster[^"]*"[^>]*href="([^"]+)"[^>]*>.*?<img src="([^"]*)"'
     r'.*?<div class="short-title">([^<]*)</div>',
@@ -404,6 +427,7 @@ EXTRA_INFO_JS = """
     }
     const genresEl = document.querySelector('.genres');
     const runtimeEl = document.querySelector('.runtime');
+    const yearEl = document.querySelector('.release_date');
     const voteWrap = document.querySelector('.fr-votes');
     let rating = null;
     if (voteWrap) {
@@ -417,6 +441,7 @@ EXTRA_INFO_JS = """
         synopsis,
         genres: genresEl ? genresEl.textContent.trim() : null,
         runtime: runtimeEl ? runtimeEl.textContent.replace('-', '').trim() : null,
+        year: yearEl ? yearEl.textContent.replace('-', '').trim() : null,
         rating,
     };
 }
@@ -536,6 +561,7 @@ class FrenchStreamScraper:
                     "rating": extra.get("rating"),
                     "genres": extra.get("genres"),
                     "runtime": extra.get("runtime"),
+                    "year": extra.get("year"),
                     "vf": [],
                     "vostfr": [],
                 }
@@ -683,6 +709,7 @@ class FrenchStreamScraper:
                     "rating": extra.get("rating"),
                     "genres": extra.get("genres"),
                     "runtime": extra.get("runtime"),
+                    "year": extra.get("year"),
                 }
 
                 if not embed_url or "vidzy." not in embed_url:
@@ -774,6 +801,440 @@ class FrenchStreamScraper:
             return None
         finally:
             host_page.close()
+
+
+# ---------------------------------------------------------------------------
+# PORNO (fr.pornhub.com / www.pornhub.com)
+#
+# La page du lecteur expose, dans son HTML, un objet JS `flashvars_<id>` qui
+# contient `mediaDefinitions`: la liste réelle des flux proposés pour la vidéo
+# (MP4 de plusieurs résolutions et/ou un flux HLS adaptatif), avec pour chacun
+# sa vraie résolution et un éventuel flag `premium`. On lit directement ces
+# données: pas d'URL de CDN devinée, et donc pas de casse quand le CDN change.
+# Un repli via navigateur est prévu si la page est servie en JS ou renvoie 403.
+# ---------------------------------------------------------------------------
+
+PORNO_FLASHVARS_RE = re.compile(r"var\s+flashvars_\d+\s*=")
+PORNO_VIEWKEY_RE = re.compile(r"viewkey=([A-Za-z0-9_\-]+)")
+
+
+def _porno_normalize_url(url):
+    """Accepter indifféremment une URL view_video.php, une URL /embed/<key>
+    ou juste une viewkey: on ne travaille ensuite que sur une seule forme."""
+    url = url.strip()
+    if "/embed/" in url:
+        key = url.rstrip("/").split("/embed/")[-1].split("?")[0].split("#")[0]
+        return f"https://www.pornhub.com/view_video.php?viewkey={key}"
+    if "viewkey=" not in url:
+        match = PORNO_VIEWKEY_RE.search(url)
+        if match:
+            return f"https://www.pornhub.com/view_video.php?viewkey={match.group(1)}"
+    return url
+
+
+def _porno_extract_balanced_object(text, start):
+    """Isoler un littéral objet JS à partir de son '{' en tenant compte des
+    chaînes (les accolades à l'intérieur d'une string ne doivent pas être
+    comptées). Le flashvars est du JSON valide: une fois l'objet isolé, il
+    se charge avec json.loads."""
+    depth = 0
+    in_string = False
+    escaped = False
+    quote = ""
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                in_string = False
+            continue
+        if char in "\"'":
+            in_string = True
+            quote = char
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:index + 1]
+    return None
+
+
+def _porno_parse_flashvars(html):
+    match = PORNO_FLASHVARS_RE.search(html or "")
+    if not match:
+        return None
+    brace = html.find("{", match.end())
+    if brace == -1:
+        return None
+    blob = _porno_extract_balanced_object(html, brace)
+    if not blob:
+        return None
+    try:
+        return json.loads(blob)
+    except json.JSONDecodeError:
+        return None
+
+
+def _porno_meta(html, prop):
+    """Lire une balise <meta property="..."> quel que soit l'ordre des
+    attributs (property avant ou après content)."""
+    for tag_match in re.finditer(r"<meta\b[^>]*>", html or "", re.I):
+        tag = tag_match.group(0)
+        if f'property="{prop}"' in tag or f"property='{prop}'" in tag:
+            content_match = re.search(r'content=["\']([^"\']*)["\']', tag, re.I)
+            if content_match:
+                return content_match.group(1)
+    return None
+
+
+def _porno_format_duration(seconds):
+    try:
+        seconds = int(seconds)
+    except (TypeError, ValueError):
+        return None
+    minutes, secs = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
+
+
+def _porno_parse_media_definitions(definitions):
+    """Ne garder que ce qui est réellement téléchargeable, dédupliqué par
+    qualité, trié de la meilleure à la moins bonne."""
+    options = []
+    seen = set()
+    for entry in definitions or []:
+        url = (entry.get("videoUrl") or "").strip()
+        if not url:
+            continue
+        quality = str(entry.get("quality") or "").strip()
+        fmt = (entry.get("format") or "").lower()
+
+        if fmt == "hls" or ".m3u8" in url:
+            kind = "hls"
+            label = "HLS (adaptatif, meilleure qualité disponible)"
+        elif "/video/get_media" in url:
+            # Pornhub route désormais son format "mp4" vers ce point d'API au
+            # lieu d'un lien CDN direct: une requête simple y renvoie "[]"
+            # (probablement un challenge anti-bot côté site), donc ce lien ne
+            # mène jamais à un vrai fichier téléchargeable. On l'ignore plutôt
+            # que de proposer une option qui produit un fichier de 2 octets.
+            continue
+        elif quality.isdigit():
+            kind = "mp4"
+            label = _label_for_height(int(quality))
+        else:
+            kind = "mp4"
+            label = "Qualité disponible"
+
+        key = (kind, label)
+        if key in seen:
+            continue
+        seen.add(key)
+        options.append({
+            "label": label,
+            "url": url,
+            "type": kind,
+            "premium": bool(entry.get("premium")),
+            "height": int(quality) if quality.isdigit() else 0,
+        })
+
+    # MP4 triés par résolution décroissante; le HLS adaptatif en dernier (il
+    # n'a pas de résolution propre, il s'adapte au débit).
+    options.sort(key=lambda option: (option["type"] == "hls", -option["height"]))
+    return options
+
+
+PORNO_LIST_ITEM_HREF_RE = re.compile(r'href="(/view_video\.php\?viewkey=[^"]+)"')
+PORNO_LIST_ITEM_IMG_RE = re.compile(r'data-image="([^"]+)"')
+PORNO_LIST_ITEM_IMG_FALLBACK_RE = re.compile(r'<img[^>]*\bsrc="([^"]+)"')
+PORNO_LIST_ITEM_DURATION_RE = re.compile(r'<var class="duration">([^<]*)</var>')
+PORNO_LIST_ITEM_TITLE_RE = re.compile(r'<span class="title">.*?<a[^>]*>([^<]*)</a>', re.DOTALL)
+PORNO_LIST_ITEM_VIEWS_RE = re.compile(r'<span class="views"><var>([^<]*)</var>')
+PORNO_NEXT_PAGE_RE = re.compile(r'<link rel="next"')
+
+
+def _parse_porno_list_items(html):
+    """Analyser une page de listing/recherche pornhub (gabarit commun aux deux):
+    chaque vignette est un <li class="pcVideoListItem ...">, qu'on découpe en
+    chunks pour ne jamais associer les métadonnées d'une vignette à sa voisine."""
+    items = []
+    for chunk in (html or "").split('<li class="pcVideoListItem')[1:]:
+        href_match = PORNO_LIST_ITEM_HREF_RE.search(chunk)
+        if not href_match:
+            continue
+        title_match = PORNO_LIST_ITEM_TITLE_RE.search(chunk)
+        img_match = PORNO_LIST_ITEM_IMG_RE.search(chunk) or PORNO_LIST_ITEM_IMG_FALLBACK_RE.search(chunk)
+        duration_match = PORNO_LIST_ITEM_DURATION_RE.search(chunk)
+        views_match = PORNO_LIST_ITEM_VIEWS_RE.search(chunk)
+        items.append({
+            "title": unescape(title_match.group(1)).strip() if title_match else "Sans titre",
+            "poster": img_match.group(1) if img_match else None,
+            "url": urljoin("https://www.pornhub.com/", href_match.group(1)),
+            "duration": duration_match.group(1).strip() if duration_match else None,
+            "views": views_match.group(1).strip() if views_match else None,
+        })
+    return items
+
+
+class PornoScraper:
+    def __init__(self, headless=True):
+        self.headless = headless
+
+    def _fetch_html(self, url, params=None):
+        headers = {
+            "User-Agent": USER_AGENT,
+            "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
+        }
+        # Cookies de contournement de la page d'âge et de la bannière de
+        # consentement: sans eux la page peut être tronquée avant le lecteur.
+        cookies = {"age_verified": "1", "platform": "pc", "cookieconsent": "1"}
+        response = requests.get(url, params=params, headers=headers, cookies=cookies, timeout=30)
+        response.raise_for_status()
+        return response.text
+
+    def _fetch_html_via_browser(self, url):
+        """Repli quand le HTML brut ne contient pas le flashvars (page servie
+        en JS) ou que le serveur bloque la requête directe."""
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=self.headless, args=LOW_MEMORY_CHROMIUM_ARGS)
+            page = browser.new_page(user_agent=USER_AGENT)
+            try:
+                page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                page.wait_for_timeout(2500)
+                return page.content()
+            finally:
+                browser.close()
+
+    def extract_video(self, url):
+        url = _porno_normalize_url(url)
+        html = None
+        try:
+            html = self._fetch_html(url)
+        except requests.RequestException:
+            html = None
+
+        data = _porno_parse_flashvars(html) if html else None
+        if not data:
+            html = self._fetch_html_via_browser(url)
+            data = _porno_parse_flashvars(html)
+        if not data:
+            return None
+
+        options = _porno_parse_media_definitions(data.get("mediaDefinitions"))
+        if not options:
+            return None
+
+        title = _porno_meta(html, "og:title") or data.get("video_title") or "video"
+        title = re.sub(r"\s*-\s*Pornhub\.com\s*$", "", title).strip() or "video"
+
+        return {
+            "title": title,
+            "thumbnail": _porno_meta(html, "og:image"),
+            "duration": _porno_format_duration(_porno_meta(html, "video:duration")),
+            "url": url,
+            "options": options,
+        }
+
+    def search_videos(self, query=None, page=1, category=None):
+        """Lister les vidéos du site: recherche par mot-clé si fourni, sinon
+        parcours du catalogue général (/video), filtrable par catégorie
+        réelle du site (voir PORNO_CATEGORIES). Les deux pages partagent le
+        même gabarit de vignette et le même mécanisme de pagination. Comme
+        pour les listings films/séries, catégorie et recherche par mot-clé ne
+        se combinent pas (le filtre catégorie n'a de sens qu'en parcours)."""
+        params = {"page": page}
+        if query:
+            params["search"] = query
+            base_url = "https://www.pornhub.com/video/search"
+        else:
+            base_url = "https://www.pornhub.com/video"
+            if category and category != "all":
+                params["c"] = category
+        html = self._fetch_html(base_url, params=params)
+        items = _parse_porno_list_items(html)
+        has_next = bool(PORNO_NEXT_PAGE_RE.search(html or ""))
+        return items, has_next
+
+
+# ---------------------------------------------------------------------------
+# Téléchargement HLS (.m3u8): de plus en plus d'hébergeurs (uqload, ansembed,
+# smoothpre...) ne servent plus de MP4 direct, seulement un flux segmenté.
+# On récupère tous les segments puis on les remuxe en .mp4 via ffmpeg s'il est
+# installé (copie de flux, aucun ré-encodage, donc rapide et sans perte); sans
+# ffmpeg, on livre quand même le résultat sous forme de .ts (lisible par VLC
+# et la plupart des lecteurs, juste pas par le lecteur intégré du navigateur).
+# ---------------------------------------------------------------------------
+
+def _resolve_ffmpeg():
+    exe = shutil.which("ffmpeg")
+    if exe:
+        return exe
+    # PATH n'est mis à jour qu'au redémarrage du terminal après une
+    # installation via winget: on vérifie aussi directement son dossier
+    # d'installation habituel pour que ça marche sans relancer l'app.
+    winget_root = os.path.join(
+        os.path.expanduser("~"), "AppData", "Local", "Microsoft", "WinGet", "Packages"
+    )
+    if not os.path.isdir(winget_root):
+        return None
+    for name in os.listdir(winget_root):
+        if not name.lower().startswith(("gyan.ffmpeg", "btbn.ffmpeg")):
+            continue
+        for dirpath, _dirs, files in os.walk(os.path.join(winget_root, name)):
+            if "ffmpeg.exe" in files:
+                return os.path.join(dirpath, "ffmpeg.exe")
+    return None
+
+
+_M3U8_BANDWIDTH_RE = re.compile(r"BANDWIDTH=(\d+)")
+
+
+def _parse_m3u8_variants(text, base_url):
+    """Variantes de qualité d'une master playlist, triées de la meilleure à
+    la moins bonne (on choisit la plus haute bande passante)."""
+    variants = []
+    pending_bandwidth = None
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("#EXT-X-STREAM-INF"):
+            match = _M3U8_BANDWIDTH_RE.search(line)
+            pending_bandwidth = int(match.group(1)) if match else 0
+        elif line and not line.startswith("#"):
+            if pending_bandwidth is not None:
+                variants.append((pending_bandwidth, urljoin(base_url, line)))
+                pending_bandwidth = None
+    return sorted(variants, key=lambda item: item[0], reverse=True)
+
+
+def _parse_m3u8_segments(text, base_url):
+    return [urljoin(base_url, line.strip()) for line in text.splitlines() if line.strip() and not line.startswith("#")]
+
+
+_M3U8_MAP_URI_RE = re.compile(r'#EXT-X-MAP:URI="([^"]+)"')
+
+
+def _parse_m3u8_init_segment(text, base_url):
+    """URL du segment d'initialisation ('#EXT-X-MAP'), utilisé par les flux
+    HLS en fMP4/CMAF (de plus en plus courants, notamment chez pornhub):
+    contrairement au MPEG-TS classique, chaque segment média (.m4s) n'est
+    pas lisible seul, il dépend des boîtes ftyp/moov de ce segment initial.
+    Absent sur un flux HLS/MPEG-TS classique (segments .ts autonomes)."""
+    match = _M3U8_MAP_URI_RE.search(text)
+    return urljoin(base_url, match.group(1)) if match else None
+
+
+def download_hls(playlist_url, dest_path, referer=None, on_progress=None, control=None):
+    """Télécharger un flux HLS: résoudre la meilleure variante si la playlist
+    est une master playlist, puis télécharger tous les segments dans l'ordre.
+
+    Deux cas selon le flux:
+    - fMP4/CMAF (présence de '#EXT-X-MAP'): le segment d'initialisation suivi
+      des segments média, concaténés dans l'ordre, forme directement un
+      .mp4 fragmenté valide — aucun remux ffmpeg n'est nécessaire.
+    - MPEG-TS classique: chaque segment .ts est autonome: on les concatène
+      dans un fichier .ts puis on remuxe en .mp4 via ffmpeg s'il est
+      disponible (sinon on livre le .ts brut, lisible par VLC).
+
+    Renvoie le chemin réel du fichier produit (peut différer de `dest_path`
+    si on est retombé sur du .ts faute de ffmpeg)."""
+    headers = {"User-Agent": USER_AGENT}
+    if referer:
+        headers["Referer"] = referer
+
+    response = requests.get(playlist_url, headers=headers, timeout=20)
+    response.raise_for_status()
+    text = response.text
+
+    if "#EXT-X-STREAM-INF" in text:
+        variants = _parse_m3u8_variants(text, playlist_url)
+        if not variants:
+            raise ValueError("Aucune variante de qualité trouvée dans la playlist HLS.")
+        playlist_url = variants[0][1]
+        response = requests.get(playlist_url, headers=headers, timeout=20)
+        response.raise_for_status()
+        text = response.text
+
+    if "#EXT-X-KEY" in text and "METHOD=NONE" not in text:
+        raise ValueError("Flux HLS chiffré: non supporté.")
+
+    segment_urls = _parse_m3u8_segments(text, playlist_url)
+    if not segment_urls:
+        raise ValueError("Playlist HLS vide.")
+    init_url = _parse_m3u8_init_segment(text, playlist_url)
+
+    os.makedirs(os.path.dirname(dest_path) or ".", exist_ok=True)
+    is_fmp4 = init_url is not None
+    out_path = dest_path if is_fmp4 else os.path.splitext(dest_path)[0] + ".part.ts"
+
+    def fetch_segment(segment_url):
+        with requests.get(segment_url, headers=headers, timeout=30) as segment_response:
+            segment_response.raise_for_status()
+            return segment_response.content
+
+    downloaded = 0
+    total_segments = len(segment_urls) + (1 if init_url else 0)
+    completed = 0
+
+    def write_chunk(output_file, data):
+        nonlocal downloaded, completed
+        output_file.write(data)
+        downloaded += len(data)
+        completed += 1
+        if control is not None:
+            control["quality_label"] = f"HLS · segment {completed}/{total_segments}"
+            # Pas de taille totale en octets connue pour du HLS: on expose le
+            # ratio de segments pour que la barre de progression côté
+            # interface avance en direct au lieu d'attendre la fin.
+            control["segments_done"] = completed
+            control["segments_total"] = total_segments
+        if on_progress:
+            on_progress(downloaded, 0)
+
+    # Un segment HLS dure quelques secondes: les télécharger un par un
+    # enchaîne des centaines d'allers-retours réseau en série (très lent).
+    # On les télécharge en parallèle (plusieurs connexions à la fois) mais on
+    # les écrit dans l'ordre d'origine, seul ordre qui donne une vidéo valide.
+    with open(out_path, "wb") as output_file, ThreadPoolExecutor(max_workers=6) as executor:
+        if init_url:
+            write_chunk(output_file, fetch_segment(init_url))
+        futures = [executor.submit(fetch_segment, segment_url) for segment_url in segment_urls]
+        for future in futures:
+            if control is not None:
+                while control.get("paused"):
+                    time.sleep(0.3)
+            write_chunk(output_file, future.result())
+
+    if is_fmp4:
+        return out_path
+
+    ffmpeg_path = _resolve_ffmpeg()
+    if not ffmpeg_path:
+        final_path = os.path.splitext(dest_path)[0] + ".ts"
+        os.replace(out_path, final_path)
+        return final_path
+
+    try:
+        subprocess.run(
+            [ffmpeg_path, "-y", "-loglevel", "error", "-i", out_path, "-c", "copy", dest_path],
+            check=True,
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError:
+        # Le remux a échoué (flux abîmé/segment manquant...): on livre quand
+        # même le .ts brut plutôt que de perdre tout le téléchargement.
+        final_path = os.path.splitext(dest_path)[0] + ".ts"
+        os.replace(out_path, final_path)
+        return final_path
+    finally:
+        if os.path.isfile(out_path):
+            os.remove(out_path)
+    return dest_path
 
 
 def download_file(url, dest_path, referer=None, on_progress=None, control=None):
@@ -961,9 +1422,70 @@ def run_downloads_anime_sama(series_url, series_title, language, numbers):
             print(f"  {Colors.RED}Erreur de téléchargement: {error}{Colors.RESET}")
 
 
+def run_download_porno(url):
+    """Télécharger une vidéo du site porno: extraction du flashvars (sans
+    navigateur), choix de la qualité réellement disponible, puis téléchargement
+    direct."""
+    scraper = PornoScraper()
+    print(f"\n{Colors.DIM}Extraction en cours (site porno)...{Colors.RESET}")
+    info = scraper.extract_video(url)
+    if not info:
+        print(f"{Colors.RED}Impossible d'extraire la vidéo.{Colors.RESET}")
+        return
+    if not info["options"]:
+        print(f"{Colors.RED}Aucune qualité de téléchargement trouvée.{Colors.RESET}")
+        return
+
+    width = 60
+    print()
+    print(f"{Colors.BOLD}{Colors.MAGENTA}{'═' * width}{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.CYAN}  VIDÉO: {info['title']}{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.MAGENTA}{'═' * width}{Colors.RESET}")
+    if info.get("duration"):
+        print(f"  {Colors.DIM}Durée: {info['duration']}{Colors.RESET}")
+    print(f"\n{Colors.BOLD}{Colors.BLUE}Qualités disponibles:{Colors.RESET}")
+    for index, option in enumerate(info["options"], start=1):
+        marker = f" {Colors.DIM}(premium){Colors.RESET}" if option.get("premium") else ""
+        print(f"  {Colors.GREEN}{index}{Colors.RESET}. {option['label']}{marker}")
+    print()
+
+    try:
+        raw = input("Qualité à télécharger [1]: ").strip()
+    except EOFError:
+        return
+    try:
+        choice = int(raw) if raw else 1
+    except ValueError:
+        choice = 1
+    if not 1 <= choice <= len(info["options"]):
+        choice = 1
+    option = info["options"][choice - 1]
+
+    safe_title = re.sub(r"[^\w\s-]", "", info["title"]).strip().replace(" ", "_") or "video"
+    safe_title = safe_title[:80]
+    suffix = re.sub(r"[^\w]+", "_", option["label"]).strip("_")
+    dest_path = os.path.join("downloads", "porno", f"{safe_title}_{suffix}.mp4")
+
+    print(f"  {Colors.GREEN}Lien trouvé{Colors.RESET} → {dest_path}")
+    try:
+        if option["type"] == "hls":
+            final_path = download_hls(option["url"], dest_path, referer=info["url"])
+        else:
+            download_file(option["url"], dest_path, referer=info["url"])
+            final_path = dest_path
+        print(f"  {Colors.GREEN}Terminé: {final_path}{Colors.RESET}")
+    except Exception as error:
+        print(f"  {Colors.RED}Erreur de téléchargement: {error}{Colors.RESET}")
+
+
 def main():
     default_url = "https://french-stream.one/index.php?newsid=15131999"
-    url = input(f"URL de la série [{default_url}]: ").strip() or default_url
+    url = input(f"URL (série, film ou vidéo) [{default_url}]: ").strip() or default_url
+
+    if "pornhub" in url:
+        run_download_porno(url)
+        return
+
     is_anime_sama = "anime-sama.to" in url
 
     if is_anime_sama:

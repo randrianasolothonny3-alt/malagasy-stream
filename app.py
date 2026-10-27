@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import uuid
 
 # Doit s'exécuter avant tout import tiers (requests/flask/playwright plus
@@ -45,8 +46,11 @@ from telecharger_episodes import (
     USER_AGENT,
     FILM_CATEGORIES,
     SERIES_CATEGORIES,
+    PORNO_CATEGORIES,
     FrenchStreamScraper,
+    PornoScraper,
     download_file,
+    download_hls,
     fetch_latest_archive,
     probe_resolution_label,
     read_local_video_duration,
@@ -60,9 +64,14 @@ if getattr(sys, "frozen", False):
 else:
     RESOURCE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-app = Flask(__name__, template_folder=os.path.join(RESOURCE_DIR, "templates"))
+app = Flask(
+    __name__,
+    template_folder=os.path.join(RESOURCE_DIR, "templates"),
+    static_folder=os.path.join(RESOURCE_DIR, "static"),
+)
 scraper = FrenchStreamScraper()
 anime_sama_scraper = AnimeSamaScraper()
+porno_scraper = PornoScraper()
 
 
 def _is_anime_sama(url):
@@ -92,6 +101,18 @@ def _write_meta(path, data):
             json.dump(data, file, ensure_ascii=False)
     except OSError:
         pass
+
+
+_WINDOWS_INVALID_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def _safe_folder_name(title):
+    """Nom de dossier lisible (garde le vrai titre, espaces et accents) en
+    retirant seulement les caractères interdits dans un nom de dossier
+    Windows, pour que chaque film ait son propre dossier nommé d'après son
+    titre dès le téléchargement."""
+    name = _WINDOWS_INVALID_CHARS.sub("", title).strip().rstrip(". ")
+    return name or "film"
 
 
 def _read_meta(path):
@@ -187,15 +208,19 @@ def api_library():
                 continue
 
             if name == "films":
-                for fname in os.listdir(full):
-                    if not fname.lower().endswith(".mp4"):
+                for film_folder in os.listdir(full):
+                    film_dir = os.path.join(full, film_folder)
+                    if not os.path.isdir(film_dir):
+                        continue
+                    fname = next((f for f in os.listdir(film_dir) if f.lower().endswith(".mp4")), None)
+                    if not fname:
                         continue
                     base = fname[:-4]
-                    mp4_path = os.path.join(full, fname)
-                    meta = _read_meta(os.path.join(full, base + ".json")) or {}
+                    mp4_path = os.path.join(film_dir, fname)
+                    meta = _read_meta(os.path.join(film_dir, base + ".json")) or {}
                     items.append({
                         "type": "film",
-                        "key": f"films/{base}",
+                        "key": f"films/{film_folder}/{base}",
                         "title": meta.get("title") or base.replace("_", " "),
                         "poster": _poster_url_from_meta(meta),
                         "url": meta.get("url"),
@@ -226,6 +251,53 @@ def api_library():
 
     items.sort(key=lambda item: item["updated_at"], reverse=True)
     return jsonify(items)
+
+
+FAVORITES_PATH = os.path.join(DOWNLOADS_ROOT, "_favorites.json")
+
+
+def _load_favorites():
+    data = _read_meta(FAVORITES_PATH)
+    return data if isinstance(data, list) else []
+
+
+@app.route("/api/favorites")
+def api_favorites():
+    """Lister les favoris enregistrés (films/séries mis de côté par
+    l'utilisateur, qu'ils soient déjà téléchargés ou non)."""
+    return jsonify(_load_favorites())
+
+
+@app.route("/api/favorites", methods=["POST"])
+def api_favorites_add():
+    data = request.json or {}
+    url = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"error": "URL manquante."}), 400
+
+    favorites = [f for f in _load_favorites() if f.get("url") != url]
+    favorites.insert(0, {
+        "title": data.get("title") or "Sans titre",
+        "poster": data.get("poster"),
+        "url": url,
+        "type": data.get("type") if data.get("type") in ("film", "serie") else "film",
+        "rating": data.get("rating"),
+        "synopsis": data.get("synopsis"),
+        "genres": data.get("genres"),
+        "runtime": data.get("runtime"),
+        "year": data.get("year"),
+        "added_at": time.time(),
+    })
+    _write_meta(FAVORITES_PATH, favorites)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/favorites", methods=["DELETE"])
+def api_favorites_remove():
+    url = (request.args.get("url") or "").strip()
+    favorites = [f for f in _load_favorites() if f.get("url") != url]
+    _write_meta(FAVORITES_PATH, favorites)
+    return jsonify({"ok": True})
 
 
 @app.route("/api/library/episodes")
@@ -462,6 +534,52 @@ def _episode_state(job_id, episode_key):
     return job["episodes"].get(episode_key) or job["episodes"].get(str(episode_key))
 
 
+_SUBTITLE_EXTENSIONS = (".srt", ".vtt")
+
+
+def _save_subtitle_file(dest_video_path, uploaded_file):
+    """Enregistrer le sous-titre importé par l'utilisateur à côté de la vidéo,
+    même nom de base (convention reconnue par VLC et la plupart des lecteurs
+    pour charger automatiquement le sous-titre correspondant)."""
+    ext = os.path.splitext(uploaded_file.filename or "")[1].lower()
+    if ext not in _SUBTITLE_EXTENSIONS:
+        ext = ".srt"
+    dest_path = os.path.splitext(dest_video_path)[0] + ext
+    uploaded_file.save(dest_path)
+    return dest_path
+
+
+@app.route("/api/subtitle/<job_id>/<int:episode_key>", methods=["POST"])
+def api_subtitle_job(job_id, episode_key):
+    """Associer un sous-titre importé manuellement à un téléchargement en
+    cours/terminé, suivi via le job en mémoire (panneau Téléchargements)."""
+    state = _episode_state(job_id, episode_key)
+    if not state or not state.get("path"):
+        abort(404)
+    uploaded_file = request.files.get("file")
+    if not uploaded_file:
+        return jsonify({"error": "Fichier manquant."}), 400
+    _save_subtitle_file(state["path"], uploaded_file)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/library/subtitle/<path:rel_path>", methods=["POST"])
+def api_library_subtitle(rel_path):
+    """Équivalent de /api/subtitle pour un fichier déjà présent dans la
+    bibliothèque hors-ligne (identifié par son chemin réel, pas par un job)."""
+    root = os.path.abspath(DOWNLOADS_ROOT)
+    full_path = os.path.abspath(os.path.join(root, rel_path))
+    if not full_path.startswith(root + os.sep):
+        abort(403)
+    if not os.path.isfile(full_path):
+        abort(404)
+    uploaded_file = request.files.get("file")
+    if not uploaded_file:
+        return jsonify({"error": "Fichier manquant."}), 400
+    _save_subtitle_file(full_path, uploaded_file)
+    return jsonify({"ok": True})
+
+
 @app.route("/api/pause/<job_id>/<int:episode_key>", methods=["POST"])
 def api_pause(job_id, episode_key):
     state = _episode_state(job_id, episode_key)
@@ -587,9 +705,10 @@ def _run_movie_download_job(job_id, title, data_url, poster=None, source_url=Non
     job = jobs[job_id]
     state = job["episodes"][0]
     safe_title = re.sub(r"[^\w\s-]", "", title).strip().replace(" ", "_") or "film"
-    poster_file = _download_poster(poster, os.path.join(DOWNLOADS_ROOT, "films", f"{safe_title}_affiche"))
+    film_dir = os.path.join(DOWNLOADS_ROOT, "films", _safe_folder_name(title))
+    poster_file = _download_poster(poster, os.path.join(film_dir, f"{safe_title}_affiche"))
     _write_meta(
-        os.path.join(DOWNLOADS_ROOT, "films", f"{safe_title}.json"),
+        os.path.join(film_dir, f"{safe_title}.json"),
         {"title": title, "poster": poster, "poster_file": poster_file, "url": source_url, "type": "film"},
     )
 
@@ -608,7 +727,7 @@ def _run_movie_download_job(job_id, title, data_url, poster=None, source_url=Non
             state["remote_url"] = result["url"]
             state["remote_referer"] = result.get("referer")
             state["watch_url"] = f"/api/watch/{job_id}/0"
-            dest_path = os.path.join(DOWNLOADS_ROOT, "films", f"{safe_title}.mp4")
+            dest_path = os.path.join(film_dir, f"{safe_title}.mp4")
             state["path"] = dest_path
 
             def on_progress(downloaded, total):
@@ -626,10 +745,112 @@ def _run_movie_download_job(job_id, title, data_url, poster=None, source_url=Non
             job["done"] = True
 
 
+@app.route("/api/porno/search")
+def api_porno_search():
+    """Lister les vidéos du site porno: recherche par mot-clé si `q` est
+    fourni, sinon parcours du catalogue général filtrable par catégorie
+    (comportement équivalent à /api/latest pour les films/séries)."""
+    query = (request.args.get("q") or "").strip() or None
+    by_id = {c["id"]: c for c in PORNO_CATEGORIES}
+    category_id = request.args.get("category") or PORNO_CATEGORIES[0]["id"]
+    if category_id not in by_id:
+        category_id = PORNO_CATEGORIES[0]["id"]
+    try:
+        page_num = max(1, int(request.args.get("page", 1)))
+    except (TypeError, ValueError):
+        page_num = 1
+    try:
+        items, has_next = porno_scraper.search_videos(query=query, page=page_num, category=category_id)
+    except Exception as error:
+        return jsonify({"error": f"Erreur de recherche: {error}"}), 500
+    return jsonify({
+        "categories": [{"id": c["id"], "label": c["label"]} for c in PORNO_CATEGORIES],
+        "active_category": category_id,
+        "items": items,
+        "page": page_num,
+        "total_pages": None,
+        "has_prev": page_num > 1,
+        "has_next": has_next,
+    })
+
+
+@app.route("/api/extract_porno", methods=["POST"])
+def api_extract_porno():
+    url = (request.json or {}).get("url", "").strip()
+    if not url:
+        return jsonify({"error": "URL manquante."}), 400
+    try:
+        info = porno_scraper.extract_video(url)
+    except Exception as error:
+        return jsonify({"error": f"Erreur d'extraction: {error}"}), 500
+    if not info or not info["options"]:
+        return jsonify({"error": "Aucune qualité de téléchargement trouvée."}), 500
+    return jsonify(info)
+
+
+@app.route("/api/download_porno", methods=["POST"])
+def api_download_porno():
+    data = request.json or {}
+    title = data.get("title", "video")
+    data_url = (data.get("url") or "").strip()
+    kind = data.get("type") if data.get("type") in ("mp4", "hls") else "mp4"
+    source_url = data.get("source_url", "")
+    if not data_url:
+        return jsonify({"error": "Paramètres invalides."}), 400
+
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {
+        "episodes": {0: {
+            "status": "en_attente", "downloaded": 0, "total": 0, "error": None,
+            "quality_label": None, "paused": False,
+        }},
+        "done": False,
+    }
+
+    thread = threading.Thread(
+        target=_run_porno_download_job,
+        args=(job_id, title, data_url, kind, source_url),
+        daemon=True,
+    )
+    thread.start()
+
+    return jsonify({"job_id": job_id})
+
+
+def _run_porno_download_job(job_id, title, data_url, kind, source_url):
+    job = jobs[job_id]
+    state = job["episodes"][0]
+    safe_title = re.sub(r"[^\w\s-]", "", title).strip().replace(" ", "_")[:80] or "video"
+    dest_path = os.path.join(DOWNLOADS_ROOT, "porno", f"{safe_title}.mp4")
+    state["path"] = dest_path
+    state["status"] = "telechargement"
+    state["remote_url"] = data_url
+    state["remote_referer"] = source_url
+    state["watch_url"] = f"/api/watch/{job_id}/0"
+
+    def on_progress(downloaded, total):
+        state["downloaded"] = downloaded
+        state["total"] = total
+
+    try:
+        if kind == "hls":
+            final_path = download_hls(data_url, dest_path, referer=source_url, on_progress=on_progress, control=state)
+            state["path"] = final_path
+        else:
+            download_file(data_url, dest_path, referer=source_url, on_progress=on_progress, control=state)
+        state["status"] = "termine"
+    except Exception as error:
+        state["status"] = "erreur"
+        state["error"] = str(error)
+    job["done"] = True
+
+
 def _run_download_job_anime_sama(job_id, series_url, series_title, language, numbers, poster=None):
-    """Équivalent de _run_download_job pour anime-sama.to: pas de Playwright
-    nécessaire, on ré-extrait la liste d'épisodes (avec ses hébergeurs) via
-    de simples requêtes HTTP, puis on résout/télécharge chaque épisode."""
+    """Équivalent de _run_download_job pour anime-sama.to: l'extraction de la
+    liste d'épisodes se fait en simples requêtes HTTP, mais la résolution de
+    certains hébergeurs (uqload, ansembed, smoothpre...) nécessite un vrai
+    navigateur pour intercepter leur flux HLS généré en JS — un seul browser
+    Playwright est donc ouvert pour tout le lot plutôt qu'un par épisode."""
     job = jobs[job_id]
     safe_title = re.sub(r"[^\w\s-]", "", series_title).strip().replace(" ", "_") or "serie"
     output_dir = os.path.join(DOWNLOADS_ROOT, safe_title, language)
@@ -651,37 +872,57 @@ def _run_download_job_anime_sama(job_id, series_url, series_title, language, num
 
     episodes_by_number = {episode["number"]: episode for episode in episodes.get(language, [])}
 
-    for number in numbers:
-        state = job["episodes"][number]
-        state["status"] = "resolution"
-
-        episode = episodes_by_number.get(number)
-        result = resolve_episode_download(episode["hosts"]) if episode else None
-
-        if not result:
-            state["status"] = "erreur"
-            state["error"] = "Lien de téléchargement introuvable (hébergeurs non supportés ou HLS uniquement)."
-            continue
-
-        state["status"] = "telechargement"
-        state["quality_label"] = probe_resolution_label(result["url"], referer=result.get("referer"))
-        state["remote_url"] = result["url"]
-        state["remote_referer"] = result.get("referer")
-        state["watch_url"] = f"/api/watch/{job_id}/{number}"
-        filename = f"{safe_title}_{language.upper()}_E{number:02d}.mp4"
-        dest_path = os.path.join(output_dir, filename)
-        state["path"] = dest_path
-
-        def on_progress(downloaded, total, state=state):
-            state["downloaded"] = downloaded
-            state["total"] = total
-
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(
+            headless=anime_sama_scraper.headless, args=LOW_MEMORY_CHROMIUM_ARGS
+        )
         try:
-            download_file(result["url"], dest_path, referer=result["referer"], on_progress=on_progress, control=state)
-            state["status"] = "termine"
-        except Exception as error:
-            state["status"] = "erreur"
-            state["error"] = str(error)
+            for number in numbers:
+                state = job["episodes"][number]
+                state["status"] = "resolution"
+
+                episode = episodes_by_number.get(number)
+                result = resolve_episode_download(episode["hosts"], browser=browser) if episode else None
+
+                if not result:
+                    state["status"] = "erreur"
+                    state["error"] = "Lien de téléchargement introuvable (aucun hébergeur exploitable pour cet épisode)."
+                    continue
+
+                state["status"] = "telechargement"
+                state["quality_label"] = (
+                    "Résolution HLS…" if result.get("hls")
+                    else probe_resolution_label(result["url"], referer=result.get("referer"))
+                )
+                state["remote_url"] = result["url"]
+                state["remote_referer"] = result.get("referer")
+                state["watch_url"] = f"/api/watch/{job_id}/{number}"
+                filename = f"{safe_title}_{language.upper()}_E{number:02d}.mp4"
+                dest_path = os.path.join(output_dir, filename)
+                state["path"] = dest_path
+
+                def on_progress(downloaded, total, state=state):
+                    state["downloaded"] = downloaded
+                    state["total"] = total
+
+                try:
+                    if result.get("hls"):
+                        final_path = download_hls(
+                            result["url"], dest_path, referer=result["referer"],
+                            on_progress=on_progress, control=state,
+                        )
+                        state["path"] = final_path
+                    else:
+                        download_file(
+                            result["url"], dest_path, referer=result["referer"],
+                            on_progress=on_progress, control=state,
+                        )
+                    state["status"] = "termine"
+                except Exception as error:
+                    state["status"] = "erreur"
+                    state["error"] = str(error)
+        finally:
+            browser.close()
 
     job["done"] = True
 
