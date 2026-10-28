@@ -6,9 +6,10 @@ import struct
 import subprocess
 import sys
 import time
+import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from html import unescape
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import requests
 from playwright.sync_api import sync_playwright
@@ -327,7 +328,254 @@ PORNO_CATEGORIES = [
     {"id": "10", "label": "Bondage"},
     {"id": "22", "label": "Masturbation"},
     {"id": "86", "label": "Animé"},
+    {"id": "kw:enceinte", "label": "Femme enceinte"},
 ]
+
+PORNO_SORT_OPTIONS = [
+    {"id": "", "label": "Pertinence"},
+    {"id": "mr", "label": "Plus récentes"},
+    {"id": "mv", "label": "Plus vues"},
+    {"id": "tr", "label": "Mieux notées"},
+    {"id": "lg", "label": "Plus longues"},
+]
+PORNO_SORT_VALUES = {opt["id"] for opt in PORNO_SORT_OPTIONS if opt["id"]}
+
+PORNO_DURATION_OPTIONS = [
+    {"id": "", "label": "Toutes durées", "min": None, "max": None},
+    {"id": "short", "label": "Courtes (< 10 min)", "min": None, "max": 10},
+    {"id": "medium", "label": "Moyennes (10-20 min)", "min": 10, "max": 20},
+    {"id": "long", "label": "Longues (> 20 min)", "min": 20, "max": None},
+]
+
+# ---------------------------------------------------------------------------
+# FOOTBALL EN DIRECT (rbtvplus18.surf / fctv33go.lol, plateforme "digit")
+#
+# SPA Nuxt servie sur une vingtaine de domaines miroirs: les routes sont
+# identiques partout (seul l'hôte change), donc tous les liens sont normalisés
+# sur le domaine choisi. La page /football.html arrive VIDE dans le HTML brut
+# (simple squelette) et se remplit en JS -> navigateur obligatoire.
+#
+# Le lecteur n'est pas chez un hébergeur externe: la page charge une iframe
+# interne /player.html et publie le vrai flux (HLS .m3u8) dans le store Vue
+# ($store.state.player.cStreamItem.mil). On lit ce store, donc on récupère une
+# URL exploitable telle quelle par download_hls() / record_live_hls() / VLC.
+# ---------------------------------------------------------------------------
+
+FOOTBALL_BASE = "https://www.rbtvplus18.surf"
+FOOTBALL_LOCALE = "/fr"                    # "" pour l'anglais
+FOOTBALL_SPORT_PATH = "/football.html"     # "/live.html" = tous les sports
+FOOTBALL_SPORT_PATHS = ("/football.html", "/live.html")
+FOOTBALL_DOMAINS = ("rbtvplus", "fctv33", "rbtv77", "rbsports77",
+                    "superabbit77", "madplay77")
+
+# Entrée de sidebar (lue par l'interface web, si elle en a un).
+FOOTBALL_SIDEBAR_ENTRY = {
+    "id": "football",
+    "label": "Football en direct",
+    "icon": "icon_st_ftb",          # icône sport déjà servie par le site
+    "type": "live",
+    "domains": FOOTBALL_DOMAINS,
+    "url": FOOTBALL_BASE + FOOTBALL_LOCALE + FOOTBALL_SPORT_PATH,
+}
+
+# Arguments Chromium communs au football: on part des arguments "basse
+# mémoire" et on ajoute la politique d'autoplay. Sans elle, Chromium bloque la
+# lecture automatique et le <video> ne réclame JAMAIS son .m3u8 -> le store
+# Vuex reste vide et aucun flux n'est récupérable.
+CHROMIUM_ARGS = LOW_MEMORY_CHROMIUM_ARGS + [
+    "--autoplay-policy=no-user-gesture-required",
+]
+
+# Extraction STRUCTURELLE des lignes de match depuis le DOM rendu.
+#
+# Ne dépend ni des classes CSS (hashs qui changent à chaque build) ni du
+# motif d'URL (le lien cliquable est parfois une icône TV avec @click, pas un
+# <a href>): une ligne de match est reconnue par sa STRUCTURE, une heure
+# HH:MM et un score "a - b" portés par deux feuilles du même conteneur le
+# plus fin qui les contient (évite les doublons parent/enfant). Le marqueur
+# "en direct" est le badge minute (44', 65', 90+'), pas le bloc de score: sur
+# l'onglet Live du site, le score est affiché pour tout le monde, le badge
+# minute non.
+FOOTBALL_MATCHES_JS = r"""
+() => {
+    const SCORE = /^\d{1,2}\s*[-–:]\s*\d{1,2}$/;
+    const TIME  = /^\d{1,2}:\d{2}$/;
+    const MIN   = /^\d{1,3}(?:\s*\+\s*\d+)?\s*['’′]/;
+    const clean = s => (s || '').replace(/\s+/g, ' ').trim();
+    const leavesOf = el => Array.from(el.querySelectorAll('*')).filter(n => !n.children.length);
+
+    const hasTimeScore = el => {
+        let t = false, s = false;
+        for (const n of leavesOf(el)) {
+            const v = clean(n.textContent);
+            if (!v) continue;
+            if (!t && TIME.test(v)) t = true;
+            else if (!s && SCORE.test(v)) s = true;
+            if (t && s) return true;
+        }
+        return false;
+    };
+
+    const cands = [];
+    for (const el of document.querySelectorAll('div, li, tr, article, section, a')) {
+        const t = clean(el.textContent);
+        if (!t || t.length > 240) continue;
+        if (el.children.length < 2) continue;
+        if (!hasTimeScore(el)) continue;
+        if (Array.from(el.children).some(c => hasTimeScore(c))) continue;
+        cands.push(el);
+    }
+
+    cands.forEach((el, i) => el.setAttribute('data-fb-idx', String(i)));
+
+    return cands.map((el, i) => {
+        const texts = leavesOf(el).map(n => clean(n.textContent)).filter(Boolean);
+
+        let minute = null, score = null, home = null, away = null, time = null;
+        for (let k = 0; k < texts.length; k++) {
+            if (!time && TIME.test(texts[k])) time = texts[k];
+            if (!minute && MIN.test(texts[k])) minute = texts[k];
+            if (!score && SCORE.test(texts[k])) {
+                score = texts[k];
+                home = texts[k - 1] || null;
+                away = texts[k + 1] || null;
+            }
+        }
+
+        // championnat: ligne d'en-tete juste au-dessus (texte court, sans heure)
+        let league = null, sib = el.previousElementSibling;
+        for (let k = 0; k < 3 && sib; k++) {
+            const t = clean(sib.textContent);
+            if (t && t.length < 70 && !TIME.test(t) && !SCORE.test(t) && !/1\s*X\s*2/.test(t)) {
+                league = t; break;
+            }
+            sib = sib.previousElementSibling;
+        }
+
+        const links = Array.from(el.querySelectorAll('a[href]')).map(a => a.href).slice(0, 8);
+        const direct = el.matches('a[href]') ? el.href : null;
+        const matchHref = links.find(h => /-match-|\/match\//i.test(h)) || direct || null;
+
+        return {
+            idx: i,
+            text: clean(el.textContent),
+            home, away, minute, score, league, time,
+            links, href: matchHref,
+            live: !!minute,
+            html: el.outerHTML.slice(0, 500),
+        };
+    });
+}
+"""
+
+# Clic sur la ligne N (l'icône TV/lecteur d'abord, la ligne en repli): utilisé
+# par get_stream() quand aucun <a href> exploitable n'a été trouvé sur la ligne.
+FOOTBALL_CLICK_JS = r"""
+(index) => {
+    const el = document.querySelector('[data-fb-idx="' + index + '"]');
+    if (!el) return false;
+    const icon = el.querySelector('i[class*=tv], svg[class*=tv], img[class*=tv], ' +
+                                  '[class*=player], [class*=play], [class*=live]');
+    const target = icon || el.querySelector('a[href]') || el;
+    target.scrollIntoView({block: 'center'});
+    target.click();
+    return true;
+}
+"""
+
+# Lecture de l'état du lecteur. Évalué sur TOUTES les frames (page parente ET
+# iframe /player.html): la première qui expose un "mil" exploitable gagne.
+# On couvre plusieurs formes de store (Nuxt 2 window.$nuxt, Nuxt 3
+# __vue_app__, payload __NUXT__) et, en dernier recours, on cherche une clé
+# "mil" en profondeur dans l'état, car un Nuxt 3 peut aplatir le store.
+FOOTBALL_STORE_JS = r"""
+() => {
+    const states = [];
+    try { if (window.$nuxt && window.$nuxt.$store) states.push(window.$nuxt.$store.state); } catch (e) {}
+    try {
+        const el = document.getElementById('__nuxt');
+        const app = el && el.__vue_app__;
+        if (app) states.push((app.config.globalProperties.$store || {}).state || {});
+    } catch (e) {}
+    try { if (window.__NUXT__) states.push(window.__NUXT__); } catch (e) {}
+
+    let mil = null, name = null, servers = [];
+    for (const s of states) {
+        const p = (s && s.player) || {};
+        const item = p.cStreamItem || {};
+        if (item.mil) { mil = item.mil; name = item.name || name; }
+        if (Array.isArray(p.cStreamList) && p.cStreamList.length) {
+            servers = p.cStreamList.map(x => ({name: x.name, streamId: x.streamId, siteType: x.siteType}));
+        }
+        if (!mil) {   // Nuxt 3: etat aplati -> recherche profonde d'une cle "mil"
+            const stack = [s];
+            let guard = 0;
+            while (stack.length && guard++ < 5000) {
+                const cur = stack.pop();
+                if (!cur || typeof cur !== 'object') continue;
+                if (typeof cur.mil === 'string' && cur.mil) { mil = cur.mil; break; }
+                for (const k in cur) { if (cur[k] && typeof cur[k] === 'object') stack.push(cur[k]); }
+            }
+        }
+    }
+    const v = document.querySelector('video');
+    return { mil, name, servers, videoSrc: (v && v.src && !v.src.startsWith('blob:')) ? v.src : null };
+}
+"""
+
+
+def _football_dump(page, path="football_debug.html"):
+    """Écrire le DOM rendu sur disque pour inspecter ce que le site renvoie
+    vraiment (redirection, anti-bot, gabarit différent...)."""
+    try:
+        with open(path, "w", encoding="utf-8") as file:
+            file.write(page.content())
+    except Exception:
+        pass
+    print(f"  {Colors.DIM}[debug] DOM -> {path} | URL={page.url} | "
+          f"titre={page.title()!r} | frames={len(page.frames)}{Colors.RESET}")
+
+
+def football_debug(url=f"{FOOTBALL_BASE}{FOOTBALL_LOCALE}{FOOTBALL_SPORT_PATH}"):
+    """Diagnostic à lancer UNE fois quand la liste de matchs revient vide.
+
+    Affiche ce que la page rend réellement: URL finale (une différence avec
+    l'URL demandée = redirection), titre (un titre de type "Just a moment" =
+    page anti-bot), nombre de liens, motifs d'URL trouvés, flux .m3u8 vus."""
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True, args=CHROMIUM_ARGS)
+        page = browser.new_page(user_agent=USER_AGENT, locale="fr-FR",
+                                viewport={"width": 1440, "height": 900})
+        page.add_init_script(
+            "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
+        )
+        seen = []
+        page.on("response", lambda response: seen.append(response.url))
+        page.goto(url, wait_until="domcontentloaded", timeout=45000)
+        try:
+            page.wait_for_load_state("networkidle", timeout=20000)
+        except Exception:
+            pass
+        for _ in range(4):
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            page.wait_for_timeout(1200)
+
+        print("URL demandee  :", url)
+        print("URL finale    :", page.url)
+        print("Titre         :", page.title())
+        print("Frames        :", [frame.url for frame in page.frames])
+        hrefs = page.eval_on_selector_all(
+            "a[href]", "els => els.map(e => e.getAttribute('href'))"
+        )
+        print("Nb <a[href]>  :", len(hrefs))
+        print("a[-match-]    :", len([h for h in hrefs if h and "-match-" in h]))
+        print("a[/football/] :", len([h for h in hrefs if h and "/football/" in h]))
+        print("Hrefs foot    :", [h for h in hrefs if h and "football" in h][:15])
+        print("Hrefs (30)    :", hrefs[:30])
+        print("m3u8 vus      :", [u for u in seen if ".m3u8" in u][:5])
+        _football_dump(page, "football_debug.html")
+        browser.close()
+
 
 LATEST_ITEM_RE = re.compile(
     r'<a class="short-poster[^"]*"[^>]*href="([^"]+)"[^>]*>.*?<img src="([^"]*)"'
@@ -1041,25 +1289,340 @@ class PornoScraper:
             "options": options,
         }
 
-    def search_videos(self, query=None, page=1, category=None):
+    def search_videos(self, query=None, page=1, category=None, sort=None, hd=False, min_duration=None, max_duration=None):
         """Lister les vidéos du site: recherche par mot-clé si fourni, sinon
         parcours du catalogue général (/video), filtrable par catégorie
         réelle du site (voir PORNO_CATEGORIES). Les deux pages partagent le
         même gabarit de vignette et le même mécanisme de pagination. Comme
         pour les listings films/séries, catégorie et recherche par mot-clé ne
-        se combinent pas (le filtre catégorie n'a de sens qu'en parcours)."""
+        se combinent pas (le filtre catégorie n'a de sens qu'en parcours).
+
+        Le filtre avancé (tri, HD, durée) est délégué au site lui-même via
+        ses propres paramètres d'URL plutôt que filtré côté client: on ne
+        reçoit qu'une page de résultats à la fois, un filtrage local ne
+        porterait donc que sur cette page et non sur tout le catalogue."""
         params = {"page": page}
         if query:
             params["search"] = query
+            base_url = "https://www.pornhub.com/video/search"
+        elif category and category.startswith("kw:"):
+            # Catégorie non listée sur le site (ex: "Femme enceinte"): pas
+            # d'identifiant de catégorie réel, on la fait passer par la
+            # recherche par mot-clé plutôt que d'inventer un `c=` qui n'existe pas.
+            params["search"] = category[len("kw:"):]
             base_url = "https://www.pornhub.com/video/search"
         else:
             base_url = "https://www.pornhub.com/video"
             if category and category != "all":
                 params["c"] = category
+        if sort in PORNO_SORT_VALUES:
+            params["o"] = sort
+        if hd:
+            params["hd"] = 1
+        if min_duration:
+            params["min_duration"] = min_duration
+        if max_duration:
+            params["max_duration"] = max_duration
         html = self._fetch_html(base_url, params=params)
         items = _parse_porno_list_items(html)
         has_next = bool(PORNO_NEXT_PAGE_RE.search(html or ""))
         return items, has_next
+
+
+class FootballScraper:
+    """Lister les matchs et résoudre le flux .m3u8, par détection STRUCTURELLE
+    (heure + score), sans dépendre des classes CSS ni du motif d'URL.
+
+    `debug=True` (ou FOOTBALL_DEBUG=1 dans l'environnement) affiche, pour
+    chaque étape, ce qui a été trouvé et écrit le DOM sur disque quand rien
+    ne remonte — indispensable pour savoir *pourquoi* une liste est vide."""
+
+    def __init__(self, headless=True, base=FOOTBALL_BASE, locale=FOOTBALL_LOCALE, debug=False):
+        self.headless = headless
+        self.base = base.rstrip("/")
+        self.locale = locale
+        self.debug = debug
+
+    # -- internes ---------------------------------------------------------
+    def _candidate_urls(self):
+        """Le préfixe de locale n'est pas fiable sur ce réseau de domaines
+        (les URLs indexées sont sans locale): on essaie les deux formes et on
+        garde la première qui rend des lignes."""
+        urls = []
+        for loc in (self.locale, ""):
+            for path in FOOTBALL_SPORT_PATHS:
+                urls.append(f"{self.base}{loc}{path}")
+        return list(dict.fromkeys(urls))
+
+    def _new_page(self, playwright):
+        browser = playwright.chromium.launch(headless=self.headless, args=CHROMIUM_ARGS)
+        page = browser.new_page(user_agent=USER_AGENT, locale="fr-FR",
+                                viewport={"width": 1440, "height": 900})
+        page.add_init_script(
+            "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
+        )
+        return browser, page
+
+    def _settle(self, page, networkidle=True):
+        """Laisser la SPA charger. On n'utilise volontairement PAS
+        wait_for_selector: il attend par défaut un élément VISIBLE, or le site
+        masque ses blocs tant que le JS n'a pas fini -> timeout garanti alors
+        que les lignes existent déjà dans le DOM."""
+        if networkidle:
+            try:
+                page.wait_for_load_state("networkidle", timeout=15000)
+            except Exception:
+                pass
+        for _ in range(3):
+            try:
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            except Exception:
+                break
+            page.wait_for_timeout(1000)
+        try:
+            page.evaluate("window.scrollTo(0, 0)")
+        except Exception:
+            pass
+        page.wait_for_timeout(400)
+
+    def _collect(self, page):
+        """Le listing peut vivre dans une iframe: on évalue sur toutes les
+        frames et on préfixe l'index par le numéro de frame, pour pouvoir
+        recliquer exactement la même ligne depuis get_stream()."""
+        rows = []
+        for frame_index, frame in enumerate(page.frames):
+            try:
+                part = frame.evaluate(FOOTBALL_MATCHES_JS)
+            except Exception:
+                continue
+            for row_index, row in enumerate(part or []):
+                row["key"] = f"{frame_index}:{row_index}"
+                rows.append(row)
+        return rows
+
+    def _click_row(self, page, key):
+        try:
+            frame_index, row_index = (int(part) for part in key.split(":"))
+        except ValueError:
+            return False
+        if frame_index >= len(page.frames):
+            return False
+        try:
+            return bool(page.frames[frame_index].evaluate(FOOTBALL_CLICK_JS, row_index))
+        except Exception:
+            return False
+
+    # -- API --------------------------------------------------------------
+    def list_matches(self, only_live=False, include_finished=False, limit=60):
+        """Renvoie les matchs affichés (en direct + à venir, ou seulement live).
+
+        `only_live` s'appuie sur le badge minute (44', 65', 90+'): sur
+        l'onglet Live du site le score est affiché pour tout le monde, donc ce
+        n'est pas lui qui distingue un match en cours d'un match à venir."""
+        with sync_playwright() as playwright:
+            browser, page = self._new_page(playwright)
+            rows = []
+            try:
+                for candidate in self._candidate_urls():
+                    try:
+                        page.goto(candidate, wait_until="domcontentloaded", timeout=45000)
+                    except Exception as error:
+                        if self.debug:
+                            print(f"  {Colors.DIM}[debug] {candidate} -> {error}{Colors.RESET}")
+                        continue
+                    self._settle(page)
+                    rows = self._collect(page)
+                    if self.debug:
+                        print(f"  {Colors.DIM}[debug] {candidate} -> {len(rows)} ligne(s){Colors.RESET}")
+                    if rows:
+                        break
+                if self.debug and not rows:
+                    _football_dump(page)
+            finally:
+                browser.close()
+
+        matches, seen = [], set()
+        for row in rows:
+            text = (row.get("text") or "").strip()
+            if not text or text.lower() in seen:
+                continue
+            seen.add(text.lower())
+
+            live = bool(row.get("minute"))
+            finished = bool(re.search(r"\b(termine|terminé|ft|ended|ap)\b", text, re.I))
+            if only_live and not live:
+                continue
+            if not include_finished and finished and not live:
+                continue
+
+            if row.get("home") and row.get("away"):
+                title = f"{row['home']} - {row['away']}"
+            else:
+                title = text[:110]
+
+            matches.append({
+                "title": title[:110],
+                "league": row.get("league"),
+                "time": row.get("time"),
+                "minute": row.get("minute"),
+                "score": row.get("score"),
+                "live": live,
+                "url": row.get("href"),
+                "key": row["key"],
+            })
+
+        # Repli: aucune ligne "live" détectée alors que des matchs existent ->
+        # on renvoie quand même la liste au lieu d'un "aucun match" sec.
+        if not matches and rows and only_live:
+            return self.list_matches(only_live=False, include_finished=True, limit=limit)
+        return matches[:limit]
+
+    def _read_player_state(self, page, timeout_ms=30000):
+        """Attendre que le lecteur publie le flux. Aucun clic 'play' n'est
+        nécessaire en principe: le store est rempli par fetchStreamDetail
+        AVANT la lecture."""
+        waited = 0
+        while waited < timeout_ms:
+            for frame in page.frames:
+                try:
+                    data = frame.evaluate(FOOTBALL_STORE_JS)
+                except Exception:
+                    continue
+                url = (data or {}).get("mil") or (data or {}).get("videoSrc")
+                if url:
+                    return {
+                        "url": url,
+                        "server": data.get("name"),
+                        "servers": data.get("servers") or [],
+                    }
+            page.wait_for_timeout(1000)
+            waited += 1000
+        return None
+
+    def _sniff_m3u8(self, page, captured):
+        """Repli qui ne dépend PAS de la structure du store: on lit les
+        requêtes réseau déjà émises (.m3u8). C'est le filet de sécurité si le
+        store change de forme ou vit dans une autre application JS."""
+        for frame in page.frames:
+            try:
+                urls = frame.evaluate(
+                    "() => performance.getEntriesByType('resource')"
+                    ".map(e => e.name).filter(n => n.includes('.m3u8'))"
+                )
+            except Exception:
+                urls = []
+            if urls:
+                return {"url": urls[-1], "server": None, "servers": []}
+        if captured:
+            return {"url": captured[-1], "server": None, "servers": []}
+        return None
+
+    def get_stream(self, match):
+        """Récupérer le flux .m3u8 d'un match.
+
+        `match` est le dictionnaire renvoyé par list_matches (ou une simple
+        URL, par compatibilité). Deux chemins: navigation directe si une URL
+        de match est connue, sinon ouverture du listing et clic sur la ligne
+        (utile quand le lien est porté par l'icône TV et non par un <a href>,
+        auquel cas `match["url"]` vaut None et seul `match["key"]` permet de
+        retrouver la ligne)."""
+        if isinstance(match, str):
+            match = {"url": match, "title": match.rsplit("/", 1)[-1]}
+
+        with sync_playwright() as playwright:
+            browser, page = self._new_page(playwright)
+            context = page.context
+            captured = []
+
+            def attach(target):
+                target.on("response", lambda response: captured.append(response.url)
+                          if ".m3u8" in response.url else None)
+
+            attach(page)
+            context.on("page", attach)
+
+            def read(target, timeout):
+                return self._read_player_state(target, timeout) or self._sniff_m3u8(target, captured)
+
+            try:
+                # 1) URL de match connue -> navigation directe
+                if match.get("url"):
+                    page.goto(match["url"], wait_until="domcontentloaded", timeout=45000)
+                    self._settle(page)
+                    result = read(page, 20000)
+                    if result:
+                        result["referer"] = page.url
+                        if self.debug:
+                            print(f"  {Colors.DIM}[debug] flux: {result['url']}{Colors.RESET}")
+                        return result
+
+                # 2) Repli: ouvrir le listing et cliquer la ligne
+                if match.get("key") is not None:
+                    for candidate in self._candidate_urls():
+                        page.goto(candidate, wait_until="domcontentloaded", timeout=45000)
+                        self._settle(page)
+                        self._collect(page)          # repose les marqueurs data-fb-idx
+                        if not self._click_row(page, match["key"]):
+                            continue
+                        page.wait_for_timeout(4000)
+                        # le clic peut ouvrir un onglet: on suit la nouvelle page
+                        target = context.pages[-1] if len(context.pages) > 1 else page
+                        result = read(target, 25000)
+                        if not result:
+                            for frame in target.frames:
+                                for selector in ("video", ".vjs-big-play-button",
+                                                 "button[class*=play]", ".play-button"):
+                                    try:
+                                        frame.click(selector, timeout=1500)
+                                        break
+                                    except Exception:
+                                        pass
+                            result = read(target, 12000)
+                        if result:
+                            result["referer"] = target.url
+                            if self.debug:
+                                print(f"  {Colors.DIM}[debug] flux (clic): {result['url']}{Colors.RESET}")
+                            return result
+
+                if self.debug:
+                    _football_dump(page, "football_stream_debug.html")
+                return None
+            except Exception as error:
+                if self.debug:
+                    print(f"  {Colors.DIM}[debug] get_stream: {error}{Colors.RESET}")
+                return None
+            finally:
+                browser.close()
+
+
+def football_probe(url=f"{FOOTBALL_BASE}{FOOTBALL_LOCALE}{FOOTBALL_SPORT_PATH}"):
+    """Affiche la structure RÉELLE des lignes détectées (texte, équipes,
+    liens, extrait HTML). À lancer si l'extraction remonte 0 ou un résultat
+    bizarre: donne de quoi ajuster les regex SCORE/TIME/MIN sans deviner."""
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True, args=CHROMIUM_ARGS)
+        page = browser.new_page(user_agent=USER_AGENT, locale="fr-FR",
+                                viewport={"width": 1440, "height": 900})
+        page.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined})")
+        page.goto(url, wait_until="domcontentloaded", timeout=45000)
+        scraper = FootballScraper()
+        scraper._settle(page)
+        rows = scraper._collect(page)
+        print(f"URL finale     : {page.url}")
+        print(f"Titre          : {page.title()}")
+        print(f"Lignes trouvées: {len(rows)}")
+        for row in rows[:3]:
+            print("-" * 60)
+            print("équipes :", row.get("home"), "|", row.get("away"))
+            print("heure   :", row.get("time"), "| minute:", row.get("minute"), "| score:", row.get("score"))
+            print("ligue   :", row.get("league"))
+            print("liens   :", row.get("links"))
+            print("html    :", row.get("html"))
+        hrefs = page.eval_on_selector_all("a[href]", "els => els.map(e => e.getAttribute('href'))")
+        print(f"\nTotal <a[href]> sur la page: {len(hrefs)}")
+        print("Exemples:", hrefs[:25])
+        _football_dump(page, "football_debug.html")
+        browser.close()
 
 
 # ---------------------------------------------------------------------------
@@ -1234,6 +1797,99 @@ def download_hls(playlist_url, dest_path, referer=None, on_progress=None, contro
     finally:
         if os.path.isfile(out_path):
             os.remove(out_path)
+    return dest_path
+
+
+def record_live_hls(playlist_url, dest_path, referer=None, seconds=1800, on_progress=None, control=None):
+    """Enregistrer un flux HLS EN DIRECT pendant `seconds` secondes.
+
+    download_hls() lit la playlist une seule fois: sur un match en cours, la
+    régie la réécrit en continu, donc l'enregistrement s'arrêterait au bout de
+    quelques minutes. Ici on relit la playlist en boucle et on n'ajoute que
+    les segments jamais vus, jusqu'à la durée demandée. Renvoie le chemin
+    réellement produit (.mp4 si le flux est fMP4/CMAF ou si ffmpeg est là,
+    sinon .ts brut)."""
+    headers = {"User-Agent": USER_AGENT}
+    if referer:
+        headers["Referer"] = referer
+
+    response = requests.get(playlist_url, headers=headers, timeout=20)
+    response.raise_for_status()
+    text = response.text
+    if "#EXT-X-STREAM-INF" in text:
+        variants = _parse_m3u8_variants(text, playlist_url)
+        if not variants:
+            raise ValueError("Aucune variante de qualité trouvée dans la playlist HLS.")
+        playlist_url = variants[0][1]
+
+    os.makedirs(os.path.dirname(dest_path) or ".", exist_ok=True)
+    started = time.time()
+    seen = set()
+    is_fmp4 = False
+    init_written = False
+    out_path = dest_path
+
+    with open(out_path, "wb") as output_file:
+        while time.time() - started < seconds:
+            try:
+                playlist = requests.get(playlist_url, headers=headers, timeout=20).text
+            except requests.RequestException:
+                time.sleep(2)
+                continue
+
+            init_url = _parse_m3u8_init_segment(playlist, playlist_url)
+            if init_url and not init_written:
+                # fMP4/CMAF: le segment d'init (ftyp/moov) doit être écrit une
+                # seule fois, en tête, sinon rien n'est lisible.
+                is_fmp4 = True
+                with requests.get(init_url, headers=headers, timeout=30) as segment:
+                    output_file.write(segment.content)
+                init_written = True
+
+            wrote = False
+            for segment_url in _parse_m3u8_segments(playlist, playlist_url):
+                if segment_url in seen:
+                    continue
+                seen.add(segment_url)
+                try:
+                    with requests.get(segment_url, headers=headers, timeout=30) as segment:
+                        output_file.write(segment.content)
+                except requests.RequestException:
+                    continue
+                wrote = True
+                if on_progress:
+                    on_progress(output_file.tell(), 0)
+            output_file.flush()
+
+            if control is not None:
+                elapsed = int(time.time() - started)
+                control["quality_label"] = f"LIVE · {elapsed}s / {seconds}s"
+                while control.get("paused"):
+                    time.sleep(0.3)
+            time.sleep(1 if wrote else 3)
+
+    if is_fmp4:
+        return out_path
+
+    # MPEG-TS concaténé brut: remux en .mp4 si ffmpeg est là, sinon .ts brut.
+    ffmpeg_path = _resolve_ffmpeg()
+    if not ffmpeg_path:
+        final_path = os.path.splitext(dest_path)[0] + ".ts"
+        os.replace(out_path, final_path)
+        return final_path
+
+    tmp_path = dest_path + ".tmp.mp4"
+    try:
+        subprocess.run(
+            [ffmpeg_path, "-y", "-loglevel", "error", "-i", out_path, "-c", "copy", tmp_path],
+            check=True,
+            capture_output=True,
+        )
+        os.replace(tmp_path, dest_path)
+    except subprocess.CalledProcessError:
+        final_path = os.path.splitext(dest_path)[0] + ".ts"
+        os.replace(out_path, final_path)
+        return final_path
     return dest_path
 
 
@@ -1478,9 +2134,105 @@ def run_download_porno(url):
         print(f"  {Colors.RED}Erreur de téléchargement: {error}{Colors.RESET}")
 
 
+def run_watch_football(url=None):
+    """Menu CLI football: liste les matchs en direct, puis joue ou enregistre.
+
+    Si `url` pointe déjà sur un match, la liste est sautée.
+    FOOTBALL_DEBUG=1 active les traces d'extraction."""
+    debug = os.environ.get("FOOTBALL_DEBUG") == "1"
+    scraper = FootballScraper(debug=debug)
+
+    # URL déjà sur un match (donc pas une page de listing).
+    if url and "football.html" not in url and "live.html" not in url:
+        match = {"title": url.rsplit("/", 1)[-1], "url": url}
+    else:
+        print(f"\n{Colors.DIM}Extraction des matchs de football en direct...{Colors.RESET}")
+        matches = scraper.list_matches(only_live=True, limit=40)
+        if not matches:
+            print(f"{Colors.RED}Aucun match de football en direct pour le moment.{Colors.RESET}")
+            print(f"{Colors.DIM}Tape 'footprobe' pour voir la structure réelle de la page, "
+                  f"ou relance avec FOOTBALL_DEBUG=1 (ou tape 'footdebug').{Colors.RESET}")
+            return
+
+        width = 60
+        print()
+        print(f"{Colors.BOLD}{Colors.MAGENTA}{'═' * width}{Colors.RESET}")
+        print(f"{Colors.BOLD}{Colors.CYAN}  FOOTBALL EN DIRECT ({len(matches)}){Colors.RESET}")
+        print(f"{Colors.BOLD}{Colors.MAGENTA}{'═' * width}{Colors.RESET}")
+        for index, item in enumerate(matches, start=1):
+            badge = item["minute"] or item["score"] or "LIVE"
+            print(f"  {Colors.YELLOW}{index:2d}{Colors.RESET}. {item['title']}  {Colors.GREEN}{badge}{Colors.RESET}")
+            if item["league"]:
+                print(f"      {Colors.DIM}{item['league']}{Colors.RESET}")
+        print()
+
+        try:
+            raw = input("Numéro du match (Entrée pour quitter): ").strip()
+        except EOFError:
+            return
+        if not raw.isdigit() or not 1 <= int(raw) <= len(matches):
+            return
+        match = matches[int(raw) - 1]
+
+    print(f"\n{Colors.DIM}Résolution du flux direct...{Colors.RESET}")
+    stream = scraper.get_stream(match)
+    if not stream:
+        print(f"{Colors.RED}Impossible de récupérer le flux (match terminé ou lecteur indisponible).{Colors.RESET}")
+        return
+
+    print(f"  {Colors.GREEN}Flux trouvé{Colors.RESET} → {stream['url']}")
+    print(f"  {Colors.DIM}Colle l'URL dans VLC/MPV pour regarder en direct.{Colors.RESET}")
+
+    try:
+        choice = input("\n[v] VLC, [d] enregistrer, [Entrée] terminer: ").strip().lower()
+    except EOFError:
+        return
+    if choice not in {"v", "d"}:
+        return
+
+    if choice == "v":
+        webbrowser.open(stream["url"])
+        return
+
+    safe_title = re.sub(r"[^\w\s-]", "", match["title"]).strip().replace(" ", "_")[:80] or "match"
+    dest_path = os.path.join("downloads", "football", f"{safe_title}.mp4")
+
+    try:
+        minutes = input("Durée d'enregistrement en minutes [90]: ").strip()
+        seconds = int(minutes) * 60 if minutes.isdigit() else 90 * 60
+    except EOFError:
+        seconds = 90 * 60
+
+    print(f"  {Colors.GREEN}Enregistrement {seconds // 60} min{Colors.RESET} → {dest_path}")
+    try:
+        final_path = record_live_hls(stream["url"], dest_path, referer=stream["referer"], seconds=seconds)
+        print(f"  {Colors.GREEN}Terminé: {final_path}{Colors.RESET}")
+    except Exception as error:
+        print(f"  {Colors.RED}Erreur: {error}{Colors.RESET}")
+
+
 def main():
     default_url = "https://french-stream.one/index.php?newsid=15131999"
-    url = input(f"URL (série, film ou vidéo) [{default_url}]: ").strip() or default_url
+    url = input(f"URL (série, film, vidéo, foot) [{default_url}]: ").strip() or default_url
+
+    # Football: domaine du site, ou simple mot-clé "foot"/"football" pour
+    # ouvrir directement la liste des matchs en direct.
+    # "footdebug" lance le diagnostic d'extraction, "footprobe" affiche la
+    # structure réelle des lignes détectées (utile si footdebug ne suffit pas
+    # à comprendre pourquoi l'extraction remonte 0 ou un résultat bizarre).
+    keyword = url.strip().lower()
+    if keyword in {"footdebug", "foot-debug", "debugfoot"}:
+        football_debug()
+        return
+    if keyword in {"footprobe", "probe"}:
+        football_probe()
+        return
+    if any(domain in keyword for domain in FOOTBALL_DOMAINS):
+        run_watch_football(url)
+        return
+    if keyword in {"foot", "football"}:
+        run_watch_football()
+        return
 
     if "pornhub" in url:
         run_download_porno(url)

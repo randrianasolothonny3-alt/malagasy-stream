@@ -180,6 +180,9 @@
   .search-wrap input::placeholder { color: var(--text-faint); }
   .topbar-badges { display: flex; gap: 0.4rem; flex-wrap: wrap; }
   .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
     font-size: 0.68rem;
     font-weight: 700;
     letter-spacing: 0.03em;
@@ -405,7 +408,7 @@
     box-shadow: 0 0 0 3px rgba(0, 200, 83, 0.14);
   }
   .url-field .url-icon { color: var(--text-faint); font-size: 0.9rem; }
-  .url-field input[type=text] {
+  .url-field input[type=text], .url-field input[type=password] {
     flex: 1;
     min-width: 0;
     background: transparent;
@@ -414,8 +417,8 @@
     padding: 0.85rem 0;
     font-size: 0.93rem;
   }
-  .url-field input[type=text]:focus { outline: none; }
-  .url-field input[type=text]::placeholder { color: var(--text-faint); }
+  .url-field input[type=text]:focus, .url-field input[type=password]:focus { outline: none; }
+  .url-field input[type=text]::placeholder, .url-field input[type=password]::placeholder { color: var(--text-faint); }
   .paste-btn {
     flex: 0 0 auto;
     background: rgba(var(--overlay-rgb), 0.06);
@@ -601,7 +604,7 @@
   .status-badge { font-size: 0.73rem; padding: 0.24rem 0.6rem; border-radius: 999px; white-space: nowrap; }
   .status-en_attente { background: var(--panel-raised); color: var(--text-faint); }
   .status-resolution, .status-telechargement { background: rgba(0, 200, 83, 0.14); color: var(--cyan-text); }
-  .status-termine { background: rgba(46, 213, 115, 0.15); color: var(--green); }
+  .status-termine, .status-pret { background: rgba(46, 213, 115, 0.15); color: var(--green); }
   .status-erreur { background: rgba(255, 71, 87, 0.15); color: var(--red); }
   #error-box {
     color: var(--red);
@@ -671,6 +674,8 @@
   }
   .catalogue-card.clickable { cursor: pointer; }
   .catalogue-card.clickable:hover { border-color: rgba(0, 200, 83, 0.45); transform: translateY(-2px); }
+  .catalogue-card.loading { opacity: 0.55; pointer-events: none; }
+  .live-badge { background: rgba(255, 71, 87, 0.9); color: #fff; border-color: rgba(255, 71, 87, 0.95); }
   .catalogue-poster {
     width: 100%;
     aspect-ratio: 2 / 3;
@@ -738,6 +743,20 @@
   }
   .site-filter-chip input { accent-color: var(--cyan); }
   .site-filter-chip:has(input:checked) { background: rgba(0, 200, 83, 0.12); border-color: rgba(0, 200, 83, 0.45); color: var(--cyan-text); }
+
+  .advanced-filters {
+    display: none;
+    background: var(--panel-raised);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1rem 1.1rem 1.1rem;
+    margin-bottom: 1.1rem;
+  }
+  .advanced-filters.open { display: block; }
+  .advanced-filters .field-label { margin-top: 0.9rem; }
+  .advanced-filters .field-label:first-child { margin-top: 0; }
+  .advanced-filters-footer { margin-top: 1rem; }
+  #porno-advanced-toggle.active { background: rgba(0, 200, 83, 0.12); border-color: rgba(0, 200, 83, 0.45); color: var(--cyan-text); }
   .site-badge { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.02em; padding: 0.2rem 0.5rem; border-radius: 999px; display: inline-block; margin-top: 0.3rem; }
   .site-badge-french-stream { background: rgba(244, 134, 37, 0.16); color: #ffb169; border: 1px solid rgba(244, 134, 37, 0.35); }
   .site-badge-anime-sama { background: rgba(232, 17, 45, 0.16); color: var(--accent-text); border: 1px solid rgba(255, 92, 92, 0.35); }
@@ -831,6 +850,64 @@
   }
   .video-modal-close:hover:not(:disabled) { background: rgba(255, 255, 255, 0.16); transform: none; box-shadow: none; filter: none; }
 
+  /* ---------- portail d'âge « contenu +21 ans » ---------- */
+  .gate-card {
+    position: relative;
+    width: min(100%, 380px);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 2.1rem 1.9rem 1.9rem;
+    text-align: center;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+    animation: gate-pop 220ms ease;
+  }
+  @keyframes gate-pop {
+    from { opacity: 0; transform: translateY(10px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .gate-close {
+    position: absolute;
+    top: 0.85rem;
+    right: 0.85rem;
+    background: rgba(var(--overlay-rgb), 0.06);
+    border-color: var(--border);
+    color: var(--text-faint);
+  }
+  .gate-close:hover:not(:disabled) { background: rgba(var(--overlay-rgb), 0.12); color: var(--text); transform: none; box-shadow: none; filter: none; }
+  .gate-icon {
+    width: 58px;
+    height: 58px;
+    margin: 0 auto 1.1rem;
+    border-radius: 50%;
+    background: rgba(232, 17, 45, 0.12);
+    border: 1px solid rgba(232, 17, 45, 0.3);
+    display: grid;
+    place-items: center;
+    font-size: 1.7rem;
+  }
+  .gate-title { margin: 0 0 0.45rem; font-size: 1.18rem; font-weight: 750; }
+  .gate-hint { margin: 0 0 1.4rem; color: var(--text-faint); font-size: 0.86rem; line-height: 1.55; }
+  .gate-field { margin-bottom: 0.4rem; }
+  .gate-field input { text-align: center; letter-spacing: 0.12em; }
+  .gate-error {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    color: var(--red);
+    font-size: 0.82rem;
+    font-weight: 600;
+    margin: 0.7rem 0 0;
+    animation: gate-shake 300ms ease;
+  }
+  @keyframes gate-shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+  }
+  .gate-submit { width: 100%; padding: 0.9rem; font-size: 0.95rem; margin-top: 1.1rem; }
+
   /* ---------- local detail page (catalogue item) ---------- */
   .detail-episode-list { display: flex; flex-direction: column; gap: 0.5rem; }
   .detail-episode-row {
@@ -859,12 +936,13 @@
       overflow-x: auto;
     }
     .sidebar-brand { padding: 0 1rem 0 0; flex: 0 0 auto; }
+    .brand-logo { width: auto; height: 2.2rem; max-width: 140px; }
     .sidebar-nav { flex-direction: row; }
     .nav-item { white-space: nowrap; }
     .sidebar-stats, .sidebar-spacer, .sidebar-label { display: none; }
     .dock-bar { left: 0; }
     .topbar { flex-wrap: wrap; padding: 0.8rem 1rem; }
-    .search-wrap { order: 3; max-width: none; width: 100%; }
+    .search-wrap { order: 3; flex: 1 1 100%; max-width: none; width: 100%; }
     .content { padding: 1.3rem 1rem 6rem; }
   }
   @media (max-width: 560px) {
@@ -881,7 +959,20 @@
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation: none !important; }
   }
+  .nav-icon svg, .icon-btn svg, .url-icon svg { width: 17px; height: 17px; stroke-width: 2.1; }
+  button svg, .actions-link svg, .dock-link svg { width: 15px; height: 15px; stroke-width: 2.25; flex: 0 0 auto; }
+  .chip svg, .rating-chip svg { width: 13px; height: 13px; stroke-width: 2.3; }
+  .placeholder-icon svg { width: 52px; height: 52px; stroke-width: 1.4; }
+  .media-poster svg, .catalogue-poster svg, .detail-poster svg { width: 30px; height: 30px; stroke-width: 1.5; }
+  .dock-icon svg { width: 18px; height: 18px; }
+  .video-modal-close svg { width: 16px; height: 16px; }
+  .gate-error svg { width: 14px; height: 14px; stroke-width: 2.4; }
+  .fav-btn.is-filled svg, svg.icon-filled { fill: currentColor; }
+  button, .actions-link, .dock-link { display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; }
+  .inline-icon { width: 13px; height: 13px; stroke-width: 2.3; vertical-align: -2px; flex: 0 0 auto; }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.js"></script>
 </head>
 <body>
 <div class="app-shell">
@@ -893,31 +984,31 @@
     <div class="sidebar-label">PLATEFORME CINÉMA</div>
     <nav class="sidebar-nav" id="sidebar-nav">
       <button type="button" class="nav-item active" data-section="catalogue" data-label="Accueil / Catalogue">
-        <span class="nav-icon">🗂️</span><span class="nav-label">Accueil / Catalogue</span>
+        <span class="nav-icon"><i data-lucide="home"></i></span><span class="nav-label">Accueil / Catalogue</span>
       </button>
       <button type="button" class="nav-item" data-section="films" data-label="Films">
-        <span class="nav-icon">🎞️</span><span class="nav-label">Films</span>
+        <span class="nav-icon"><i data-lucide="film"></i></span><span class="nav-label">Films</span>
       </button>
       <button type="button" class="nav-item" data-section="series" data-label="Séries TV">
-        <span class="nav-icon">📺</span><span class="nav-label">Séries TV</span>
+        <span class="nav-icon"><i data-lucide="tv"></i></span><span class="nav-label">Séries TV</span>
+      </button>
+      <button type="button" class="nav-item" data-section="football" data-label="Football en direct">
+        <span class="nav-icon">⚽</span><span class="nav-label">Football en direct</span>
       </button>
       <button type="button" class="nav-item" data-section="downloads" data-label="Téléchargements">
-        <span class="nav-icon">⬇️</span><span class="nav-label">Téléchargements</span>
+        <span class="nav-icon"><i data-lucide="download"></i></span><span class="nav-label">Téléchargements</span>
         <span class="nav-pill" id="nav-dl-pill"></span>
       </button>
       <button type="button" class="nav-item" data-section="library" data-label="Bibliothèque hors-ligne">
-        <span class="nav-icon">📁</span><span class="nav-label">Bibliothèque hors-ligne</span>
+        <span class="nav-icon"><i data-lucide="folder"></i></span><span class="nav-label">Bibliothèque hors-ligne</span>
       </button>
       <button type="button" class="nav-item" data-section="favorites" data-label="Favoris">
-        <span class="nav-icon">⭐</span><span class="nav-label">Favoris</span>
-      </button>
-      <button type="button" class="nav-item" data-section="porno" data-label="Film +21 ans">
-        <span class="nav-icon">🔞</span><span class="nav-label">Film +21 ans</span>
+        <span class="nav-icon"><i data-lucide="star"></i></span><span class="nav-label">Favoris</span>
       </button>
     </nav>
     <div class="sidebar-spacer"></div>
     <div class="sidebar-stats">
-      <div class="stat-label"><span>💾 Stockage local</span><span id="disk-free">—</span></div>
+      <div class="stat-label"><span><i data-lucide="hard-drive"></i> Stockage local</span><span id="disk-free">—</span></div>
       <div class="stat-bar-bg"><div class="stat-bar-fill" id="disk-bar"></div></div>
       <div class="stat-sub" id="disk-sub"></div>
     </div>
@@ -926,17 +1017,18 @@
   <div class="main-area">
     <header class="topbar">
       <div class="search-wrap">
-        <span class="url-icon" aria-hidden="true">🔎</span>
+        <span class="url-icon" aria-hidden="true"><i data-lucide="search"></i></span>
         <input type="text" id="filter-input" placeholder="Filtrer les épisodes affichés…" aria-label="Filtrer les épisodes">
       </div>
       <div class="topbar-badges" id="topbar-badges"></div>
       <div class="topbar-spacer"></div>
       <div class="queue-pill" id="queue-pill"><span class="dot"></span><span id="queue-text">File inactive</span></div>
       <div class="topbar-icons">
-        <button type="button" class="icon-btn" id="theme-toggle" title="Changer de thème">🌙</button>
-        <button type="button" class="icon-btn" title="Aide">❔</button>
-        <button type="button" class="icon-btn" title="Historique">🕘</button>
-        <button type="button" class="icon-btn" title="Notifications">🔔</button>
+        <button type="button" class="icon-btn nav-item" data-section="porno" data-label="Film +21 ans" title="Film +21 ans">🔞</button>
+        <button type="button" class="icon-btn" id="theme-toggle" title="Changer de thème"><i data-lucide="moon"></i></button>
+        <button type="button" class="icon-btn" title="Aide"><i data-lucide="circle-help"></i></button>
+        <button type="button" class="icon-btn" title="Historique"><i data-lucide="history"></i></button>
+        <button type="button" class="icon-btn" title="Notifications"><i data-lucide="bell"></i></button>
       </div>
     </header>
 
@@ -954,7 +1046,7 @@
                 <h1><span class="brand-word">Bokolo ·</span> <span class="accent-text">Extracteur &amp; Téléchargement Direct</span></h1>
                 <p class="tagline">Votre espace de téléchargement cinématique. Collez un lien source, choisissez la qualité disponible, puis rapatriez vers votre stockage local.</p>
               </div>
-              <div class="hero-stat">⚡ Vitesse actuelle&nbsp;: <strong id="hero-speed">en veille</strong></div>
+              <div class="hero-stat"><i data-lucide="zap"></i> Vitesse actuelle&nbsp;: <strong id="hero-speed">en veille</strong></div>
             </div>
           </div>
 
@@ -962,17 +1054,17 @@
             <h2 class="form-title">Que souhaitez-vous télécharger ?</h2>
             <p class="form-hint">Choisissez un format, collez le lien de la page, puis appuyez sur « Extraire &amp; analyser ».</p>
             <div class="tabs" id="mode-tabs" role="group" aria-label="Type de contenu">
-              <button type="button" class="tab active" data-mode="serie" aria-pressed="true">📺 Série / Saisons</button>
-              <button type="button" class="tab" data-mode="film" aria-pressed="false">🎞️ Film / Média unique</button>
+              <button type="button" class="tab active" data-mode="serie" aria-pressed="true"><i data-lucide="tv"></i> Série / Saisons</button>
+              <button type="button" class="tab" data-mode="film" aria-pressed="false"><i data-lucide="film"></i> Film / Média unique</button>
             </div>
             <label class="field-label" for="url-input">LIEN SOURCE DE LA PAGE</label>
             <div class="row">
               <div class="url-field">
-                <span class="url-icon" aria-hidden="true">🔗</span>
+                <span class="url-icon" aria-hidden="true"><i data-lucide="link"></i></span>
                 <input type="text" id="url-input" inputmode="url" autocomplete="url" aria-describedby="url-hint" placeholder="https://…">
                 <button type="button" class="paste-btn" id="paste-btn">COLLER</button>
               </div>
-              <button type="button" class="primary" id="extract-btn">⚡ Extraire &amp; analyser</button>
+              <button type="button" class="primary" id="extract-btn"><i data-lucide="zap"></i> Extraire &amp; analyser</button>
             </div>
             <p class="muted" id="url-hint" style="margin:0.65rem 0 0;">Compatible french-stream.one (via Vidzy) et anime-sama.to (via Sendvid/Sibnet).</p>
             <div id="error-box" role="alert" aria-live="assertive"></div>
@@ -980,7 +1072,7 @@
 
           <div class="panel" id="episodes-panel" style="display:none;">
             <div class="media-row">
-              <div class="media-poster" id="media-poster" aria-hidden="true">🎬</div>
+              <div class="media-poster" id="media-poster" aria-hidden="true"><i data-lucide="clapperboard"></i></div>
               <div class="media-info">
                 <div class="media-badges">
                   <span class="chip chip-cyan">MÉDIA DÉTECTÉ</span>
@@ -992,7 +1084,7 @@
                 <p class="media-synopsis muted" id="media-synopsis" style="display:none;"></p>
               </div>
               <div class="media-status">
-                <span class="chip chip-green">✓ Épisodes détectés</span>
+                <span class="chip chip-green"><i data-lucide="check"></i> Épisodes détectés</span>
                 <span class="status-time" id="media-status-time"></span>
               </div>
             </div>
@@ -1024,15 +1116,16 @@
             <div class="ep-grid" id="ep-grid"></div>
             <div class="actions">
               <button type="button" class="actions-link" id="select-all-btn">Tout cocher</button>
-              <button type="button" class="primary" id="download-btn">⚡ Télécharger la sélection</button>
-              <button type="button" class="secondary fav-btn" id="media-favorite-btn">☆ Ajouter aux favoris</button>
+              <button type="button" class="secondary" id="watch-btn"><i data-lucide="eye"></i> Regarder en ligne</button>
+              <button type="button" class="primary" id="download-btn"><i data-lucide="zap"></i> Télécharger la sélection</button>
+              <button type="button" class="secondary fav-btn" id="media-favorite-btn"><i data-lucide="star"></i> Ajouter aux favoris</button>
               <span class="muted" id="selection-count" aria-live="polite"></span>
             </div>
           </div>
 
           <div class="panel" id="film-panel" style="display:none;">
             <div class="media-row">
-              <div class="media-poster" id="film-poster" aria-hidden="true">🎞️</div>
+              <div class="media-poster" id="film-poster" aria-hidden="true"><i data-lucide="film"></i></div>
               <div class="media-info">
                 <div class="media-badges">
                   <span class="chip chip-cyan">MÉDIA DÉTECTÉ</span>
@@ -1046,8 +1139,9 @@
             <div class="section-label">CHOISIR LA QUALITÉ VIDÉO</div>
             <div class="quality-cards" id="film-options"></div>
             <div class="actions">
-              <button type="button" class="primary" id="film-download-btn">⚡ Télécharger</button>
-              <button type="button" class="secondary fav-btn" id="film-favorite-btn">☆ Ajouter aux favoris</button>
+              <button type="button" class="secondary" id="film-watch-btn"><i data-lucide="eye"></i> Regarder en ligne</button>
+              <button type="button" class="primary" id="film-download-btn"><i data-lucide="zap"></i> Télécharger</button>
+              <button type="button" class="secondary fav-btn" id="film-favorite-btn"><i data-lucide="star"></i> Ajouter aux favoris</button>
             </div>
           </div>
 
@@ -1055,13 +1149,13 @@
             <div class="series-title">Téléchargement en cours</div>
             <div id="progress-list"></div>
             <div class="actions" id="retry-all-row" style="display:none;">
-              <button type="button" class="secondary" id="retry-all-btn">↻ Réessayer les échecs</button>
+              <button type="button" class="secondary" id="retry-all-btn"><i data-lucide="rotate-ccw"></i> Réessayer les échecs</button>
             </div>
           </div>
         </div>
 
         <div class="panel placeholder-panel" id="placeholder-panel" style="display:none;">
-          <div class="placeholder-icon">🚧</div>
+          <div class="placeholder-icon"><i data-lucide="construction"></i></div>
           <h2 class="form-title" id="placeholder-title">Bientôt disponible</h2>
           <p class="form-hint">Cette section n'existe pas encore dans Bokolo — pour l'instant, tout se passe dans « Téléchargements ».</p>
         </div>
@@ -1091,7 +1185,7 @@
           </div>
           <div class="row">
             <div class="url-field">
-              <span class="url-icon" aria-hidden="true">🔎</span>
+              <span class="url-icon" aria-hidden="true"><i data-lucide="search"></i></span>
               <input type="text" id="home-search-input" placeholder="Titre d'une série, d'un film ou d'un anime…">
             </div>
             <button type="button" class="primary" id="home-search-btn">Rechercher</button>
@@ -1105,7 +1199,7 @@
           <p class="form-hint">Tous les films ajoutés sur French-Stream, filtrables par genre, 25 par page.</p>
           <div class="row" style="margin-bottom:1rem;">
             <div class="url-field">
-              <span class="url-icon" aria-hidden="true">🔎</span>
+              <span class="url-icon" aria-hidden="true"><i data-lucide="search"></i></span>
               <input type="text" id="films-search-input" placeholder="Rechercher un film par titre…">
             </div>
           </div>
@@ -1120,7 +1214,7 @@
           <p class="form-hint">Toutes les séries ajoutées sur French-Stream, filtrables par catégorie, 25 par page.</p>
           <div class="row" style="margin-bottom:1rem;">
             <div class="url-field">
-              <span class="url-icon" aria-hidden="true">🔎</span>
+              <span class="url-icon" aria-hidden="true"><i data-lucide="search"></i></span>
               <input type="text" id="series-search-input" placeholder="Rechercher une série par titre…">
             </div>
           </div>
@@ -1128,6 +1222,13 @@
           <div class="catalogue-grid catalogue-grid-5col" id="series-grid"></div>
           <div class="muted" id="series-empty" style="display:none;">Chargement…</div>
           <div class="actions" id="series-pager"></div>
+        </div>
+
+        <div class="panel" id="football-page" style="display:none;">
+          <h2 class="form-title">Football en direct</h2>
+          <p class="form-hint">Tous les matchs en direct actuellement disponibles.</p>
+          <div class="catalogue-grid catalogue-grid-5col" id="football-grid"></div>
+          <div class="muted" id="football-empty" style="display:none;">Chargement…</div>
         </div>
 
         <div class="panel" id="catalogue-panel" style="display:none;">
@@ -1142,8 +1243,20 @@
           <p class="form-hint">Parcourez ou recherchez par mot-clé, filtrable par catégorie.</p>
           <div class="row" style="margin-bottom:1rem;">
             <div class="url-field">
-              <span class="url-icon" aria-hidden="true">🔎</span>
+              <span class="url-icon" aria-hidden="true"><i data-lucide="search"></i></span>
               <input type="text" id="porno-search-input" placeholder="Rechercher une vidéo par mot-clé…">
+            </div>
+            <button type="button" class="secondary" id="porno-advanced-toggle"><i data-lucide="sliders-horizontal"></i> Filtre avancé</button>
+          </div>
+          <div class="advanced-filters" id="porno-advanced-panel">
+            <div class="field-label">TRIER PAR</div>
+            <div class="site-filter" id="porno-sort-filter"></div>
+            <div class="field-label">DURÉE</div>
+            <div class="site-filter" id="porno-duration-filter"></div>
+            <div class="field-label">QUALITÉ</div>
+            <label class="site-filter-chip"><input type="checkbox" id="porno-hd-filter"> HD uniquement</label>
+            <div class="advanced-filters-footer">
+              <button type="button" class="actions-link" id="porno-advanced-reset">Réinitialiser les filtres</button>
             </div>
           </div>
           <div class="site-filter" id="porno-category-filter"></div>
@@ -1160,13 +1273,13 @@
         </div>
 
         <div class="panel" id="detail-page" style="display:none;">
-          <button type="button" class="actions-link" id="detail-back-btn">← Retour</button>
+          <button type="button" class="actions-link" id="detail-back-btn"><i data-lucide="arrow-left"></i> Retour</button>
           <div class="media-row" style="margin-top:1.1rem;">
             <div class="media-poster" id="detail-poster" aria-hidden="true"></div>
             <div class="media-info">
               <div class="series-title" id="detail-title"></div>
               <div class="muted" id="detail-meta"></div>
-              <a class="catalogue-link" id="detail-source-link" href="#" target="_blank" rel="noopener noreferrer" style="display:none;">Voir la page source ↗</a>
+              <a class="catalogue-link" id="detail-source-link" href="#" target="_blank" rel="noopener noreferrer" style="display:none;">Voir la page source <i data-lucide="external-link"></i></a>
             </div>
           </div>
           <div class="section-label">ÉPISODES TÉLÉCHARGÉS</div>
@@ -1179,7 +1292,7 @@
 </div>
 
 <div class="dock-bar" id="dock-bar">
-  <div class="dock-icon">⬇️</div>
+  <div class="dock-icon"><i data-lucide="download"></i></div>
   <div class="dock-main">
     <div class="dock-top">
       <strong id="dock-count">0 téléchargement en cours</strong>
@@ -1187,41 +1300,51 @@
     </div>
     <div class="dock-bar-bg"><div class="dock-bar-fill" id="dock-bar-fill"></div></div>
   </div>
-  <button type="button" class="dock-link" id="dock-link">Voir le détail ↓</button>
+  <button type="button" class="dock-link" id="dock-link">Voir le détail <i data-lucide="chevron-down"></i></button>
 </div>
 
 <div class="video-modal-overlay" id="video-modal-overlay" style="display:none;">
   <div class="video-modal">
-    <button type="button" class="video-modal-close" id="video-modal-close" aria-label="Fermer la lecture">✕</button>
+    <button type="button" class="video-modal-close" id="video-modal-close" aria-label="Fermer la lecture"><i data-lucide="x"></i></button>
     <video id="video-modal-player" controls></video>
   </div>
 </div>
 
 <div class="video-modal-overlay" id="porno-password-overlay" style="display:none;">
-  <div class="panel" style="position:relative; width:min(100%, 380px); margin-bottom:0;">
-    <button type="button" class="video-modal-close" id="porno-password-close" aria-label="Fermer" style="top:-2.5rem;">✕</button>
-    <h2 class="form-title" style="margin-top:0;">🔞 Contenu +21 ans</h2>
-    <p class="form-hint">Entrez le mot de passe pour accéder à cette section.</p>
+  <div class="gate-card">
+    <button type="button" class="video-modal-close gate-close" id="porno-password-close" aria-label="Fermer"><i data-lucide="x"></i></button>
+    <div class="gate-icon" aria-hidden="true">🔞</div>
+    <h2 class="gate-title">Contenu +21 ans</h2>
+    <p class="gate-hint">Cette section est réservée aux adultes.<br>Entrez le mot de passe pour continuer.</p>
     <form id="porno-password-form">
-      <div class="url-field">
-        <span class="url-icon" aria-hidden="true">🔒</span>
+      <div class="url-field gate-field">
+        <span class="url-icon" aria-hidden="true"><i data-lucide="lock"></i></span>
         <input type="password" id="porno-password-input" placeholder="Mot de passe" autocomplete="current-password">
       </div>
-      <div class="muted" id="porno-password-error" role="alert" style="display:none; color:#ff6b6b;">Mot de passe incorrect.</div>
-      <div class="actions" style="margin-top:1rem;">
-        <button type="submit" class="primary">Confirmer</button>
-      </div>
+      <div class="gate-error" id="porno-password-error" role="alert"><i data-lucide="triangle-alert"></i> Mot de passe incorrect.</div>
+      <button type="submit" class="primary gate-submit">Confirmer l'accès</button>
     </form>
   </div>
 </div>
 
 <script>
+/* ---------- icônes (lucide): rendu initial + rendu auto pour tout contenu
+   ajouté dynamiquement ensuite (cartes, boutons de contrôle, etc.) ---------- */
+lucide.createIcons();
+let lucideRenderScheduled = false;
+function scheduleLucideRender() {
+  if (lucideRenderScheduled) return;
+  lucideRenderScheduled = true;
+  requestAnimationFrame(() => { lucideRenderScheduled = false; lucide.createIcons(); });
+}
+new MutationObserver(scheduleLucideRender).observe(document.body, { childList: true, subtree: true });
+
 /* ---------- thème clair / sombre ---------- */
 const themeToggleBtn = document.getElementById('theme-toggle');
 
 function applyThemeIcon() {
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  themeToggleBtn.textContent = isDark ? '☀️' : '🌙';
+  themeToggleBtn.innerHTML = isDark ? '<i data-lucide="sun"></i>' : '<i data-lucide="moon"></i>';
   themeToggleBtn.title = isDark ? 'Passer au thème clair' : 'Passer au thème sombre';
 }
 
@@ -1271,6 +1394,7 @@ const selectAllBtn = document.getElementById('select-all-btn');
 const qualitySection = document.getElementById('quality-section');
 const qualityCards = document.getElementById('quality-cards');
 const downloadBtn = document.getElementById('download-btn');
+const watchBtn = document.getElementById('watch-btn');
 const selectionCount = document.getElementById('selection-count');
 const progressPanel = document.getElementById('progress-panel');
 const progressList = document.getElementById('progress-list');
@@ -1278,6 +1402,7 @@ const filmPanel = document.getElementById('film-panel');
 const filmTitleEl = document.getElementById('film-title');
 const filmOptionsEl = document.getElementById('film-options');
 const filmDownloadBtn = document.getElementById('film-download-btn');
+const filmWatchBtn = document.getElementById('film-watch-btn');
 const retryAllRow = document.getElementById('retry-all-row');
 const retryAllBtn = document.getElementById('retry-all-btn');
 const filterInput = document.getElementById('filter-input');
@@ -1311,6 +1436,12 @@ const pornoEmpty = document.getElementById('porno-empty');
 const pornoPager = document.getElementById('porno-pager');
 const pornoCategoryFilter = document.getElementById('porno-category-filter');
 const pornoSearchInput = document.getElementById('porno-search-input');
+const pornoAdvancedToggle = document.getElementById('porno-advanced-toggle');
+const pornoAdvancedPanel = document.getElementById('porno-advanced-panel');
+const pornoAdvancedReset = document.getElementById('porno-advanced-reset');
+const pornoSortFilter = document.getElementById('porno-sort-filter');
+const pornoDurationFilter = document.getElementById('porno-duration-filter');
+const pornoHdFilter = document.getElementById('porno-hd-filter');
 const homeSearchPanel = document.getElementById('home-search-panel');
 const homeSearchInput = document.getElementById('home-search-input');
 const homeSearchBtn = document.getElementById('home-search-btn');
@@ -1335,10 +1466,14 @@ const seriesGrid = document.getElementById('series-grid');
 const seriesEmpty = document.getElementById('series-empty');
 const seriesPager = document.getElementById('series-pager');
 const seriesSearchInput = document.getElementById('series-search-input');
+const footballPage = document.getElementById('football-page');
+const footballGrid = document.getElementById('football-grid');
+const footballEmpty = document.getElementById('football-empty');
 
 const filmsState = { category: null, page: 1 };
 const seriesState = { category: null, page: 1 };
-const pornoState = { category: null, page: 1 };
+const pornoState = { category: null, page: 1, sort: '', duration: '', hd: false };
+let footballItems = [];
 
 function hideMainPanels() {
   toolViews.style.display = 'none';
@@ -1349,6 +1484,7 @@ function hideMainPanels() {
   filmsPage.style.display = 'none';
   seriesPage.style.display = 'none';
   pornoPage.style.display = 'none';
+  footballPage.style.display = 'none';
   detailPage.style.display = 'none';
 }
 
@@ -1419,7 +1555,7 @@ function renderPager(container, data, onGoToPage) {
     const prevBtn = document.createElement('button');
     prevBtn.type = 'button';
     prevBtn.className = 'secondary';
-    prevBtn.textContent = '← Précédent';
+    prevBtn.innerHTML = '<i data-lucide="arrow-left"></i> Précédent';
     prevBtn.disabled = !data.has_prev;
     prevBtn.addEventListener('click', () => onGoToPage(data.page - 1));
     const pageLabel = document.createElement('span');
@@ -1428,7 +1564,7 @@ function renderPager(container, data, onGoToPage) {
     const nextBtn = document.createElement('button');
     nextBtn.type = 'button';
     nextBtn.className = 'secondary';
-    nextBtn.textContent = 'Suivant →';
+    nextBtn.innerHTML = 'Suivant <i data-lucide="arrow-right"></i>';
     nextBtn.disabled = !data.has_next;
     nextBtn.addEventListener('click', () => onGoToPage(data.page + 1));
     nav.appendChild(prevBtn);
@@ -1563,6 +1699,10 @@ document.querySelectorAll('.nav-item').forEach(item => {
       seriesSearchInput.value = '';
       seriesCategoryFilter.style.display = '';
       loadLatest('serie', seriesState, seriesGrid, seriesEmpty, seriesCategoryFilter, seriesPager);
+    } else if (item.dataset.section === 'football') {
+      location.hash = '#football';
+      footballPage.style.display = 'block';
+      loadFootballList();
     } else {
       location.hash = '';
       placeholderTitle.textContent = item.dataset.label || 'Bientôt disponible';
@@ -1577,7 +1717,7 @@ function buildCatalogueCard(item) {
   card.title = 'Voir le détail';
   const poster = document.createElement('div');
   poster.className = 'catalogue-poster';
-  setPoster(poster, item.poster, item.type === 'film' ? '🎞️' : '🎬');
+  setPoster(poster, item.poster, item.type === 'film' ? 'film' : 'clapperboard');
   const info = document.createElement('div');
   info.className = 'catalogue-info';
   info.innerHTML = `
@@ -1694,7 +1834,10 @@ function updateFavoriteButtons() {
     if (!btn) return;
     const isFav = !!currentUrl && favoriteUrls.has(currentUrl);
     btn.classList.toggle('active', isFav);
-    btn.textContent = isFav ? '★ Dans les favoris' : '☆ Ajouter aux favoris';
+    btn.classList.toggle('is-filled', isFav);
+    btn.innerHTML = isFav
+      ? '<i data-lucide="star"></i> Dans les favoris'
+      : '<i data-lucide="star"></i> Ajouter aux favoris';
   });
 }
 
@@ -1726,11 +1869,11 @@ function buildFavoriteCard(item) {
   card.title = 'Ouvrir';
   const poster = document.createElement('div');
   poster.className = 'catalogue-poster';
-  setPoster(poster, item.poster, item.type === 'film' ? '🎞️' : '🎬');
+  setPoster(poster, item.poster, item.type === 'film' ? 'film' : 'clapperboard');
   const info = document.createElement('div');
   info.className = 'catalogue-info';
   const typeLabel = item.type === 'film' ? 'Film' : 'Série';
-  const metaBits = [typeLabel, item.year, (typeof item.rating === 'number' ? `★ ${item.rating.toFixed(1)}` : null)].filter(Boolean);
+  const metaBits = [typeLabel, item.year, (typeof item.rating === 'number' ? `<i data-lucide="star" class="inline-icon"></i> ${item.rating.toFixed(1)}` : null)].filter(Boolean);
   info.innerHTML = `
     <div class="catalogue-title">${item.title}</div>
     <div class="catalogue-meta">${metaBits.join(' · ')}</div>
@@ -1741,9 +1884,9 @@ function buildFavoriteCard(item) {
   removeBtn.className = 'fav-remove-btn';
   removeBtn.title = 'Retirer des favoris';
   removeBtn.setAttribute('aria-label', 'Retirer des favoris');
-  removeBtn.textContent = '★';
-  removeBtn.addEventListener('mouseenter', () => { removeBtn.textContent = '✕'; });
-  removeBtn.addEventListener('mouseleave', () => { removeBtn.textContent = '★'; });
+  removeBtn.innerHTML = '<i data-lucide="star" class="icon-filled"></i>';
+  removeBtn.addEventListener('mouseenter', () => { removeBtn.innerHTML = '<i data-lucide="x"></i>'; });
+  removeBtn.addEventListener('mouseleave', () => { removeBtn.innerHTML = '<i data-lucide="star" class="icon-filled"></i>'; });
   removeBtn.addEventListener('click', async (event) => {
     event.stopPropagation();
     if (removeBtn.disabled) return;
@@ -1753,7 +1896,7 @@ function buildFavoriteCard(item) {
     card.addEventListener('transitionend', () => {
       card.remove();
       if (!favoritesGrid.children.length) {
-        favoritesEmpty.textContent = "Aucun favori pour l'instant — ouvrez un film ou une série puis cliquez sur « ☆ Ajouter aux favoris ».";
+        favoritesEmpty.textContent = "Aucun favori pour l'instant — ouvrez un film ou une série puis cliquez sur « Ajouter aux favoris ».";
         favoritesEmpty.style.display = 'block';
       }
     }, { once: true });
@@ -1778,7 +1921,7 @@ async function loadFavorites() {
     if (myToken !== favoritesToken) return; // un rechargement plus récent a déjà été lancé entre-temps
     favoriteUrls = new Set(items.map(f => f.url));
     if (!items.length) {
-      favoritesEmpty.textContent = "Aucun favori pour l'instant — ouvrez un film ou une série puis cliquez sur « ☆ Ajouter aux favoris ».";
+      favoritesEmpty.textContent = "Aucun favori pour l'instant — ouvrez un film ou une série puis cliquez sur « Ajouter aux favoris ».";
       favoritesEmpty.style.display = 'block';
       return;
     }
@@ -1800,7 +1943,7 @@ function buildSearchResultCard(item, showSite = true) {
   card.title = 'Utiliser ce résultat';
   const poster = document.createElement('div');
   poster.className = 'catalogue-poster';
-  setPoster(poster, item.poster, '🎬');
+  setPoster(poster, item.poster, 'clapperboard');
   const info = document.createElement('div');
   info.className = 'catalogue-info';
   const typeLabel = item.type === 'film' ? 'Film' : 'Série';
@@ -1830,7 +1973,7 @@ function buildPornoCard(item) {
   card.title = 'Utiliser cette vidéo';
   const poster = document.createElement('div');
   poster.className = 'catalogue-poster';
-  setPoster(poster, item.poster, '🎬');
+  setPoster(poster, item.poster, 'clapperboard');
   const info = document.createElement('div');
   info.className = 'catalogue-info';
   const titleEl = document.createElement('div');
@@ -1863,6 +2006,9 @@ async function loadPornoList() {
     } else if (pornoState.category) {
       params.set('category', pornoState.category);
     }
+    if (pornoState.sort) params.set('sort', pornoState.sort);
+    if (pornoState.duration) params.set('duration', pornoState.duration);
+    if (pornoState.hd) params.set('hd', '1');
     const res = await fetch(`/api/porno/search?${params.toString()}`);
     const data = await safeJson(res);
     if (myToken !== pornoListToken) return; // une recherche/page plus récente a déjà été lancée entre-temps
@@ -1876,6 +2022,25 @@ async function loadPornoList() {
         loadPornoList();
       });
     }
+    if (data.sort_options) {
+      pornoState.sort = data.active_sort;
+      renderCategoryFilter(pornoSortFilter, data.sort_options, data.active_sort, id => {
+        pornoState.sort = id;
+        pornoState.page = 1;
+        loadPornoList();
+      });
+    }
+    if (data.duration_options) {
+      pornoState.duration = data.active_duration;
+      renderCategoryFilter(pornoDurationFilter, data.duration_options, data.active_duration, id => {
+        pornoState.duration = id;
+        pornoState.page = 1;
+        loadPornoList();
+      });
+    }
+    pornoState.hd = !!data.active_hd;
+    pornoHdFilter.checked = pornoState.hd;
+    updatePornoAdvancedBadge();
     if (!data.items.length) {
       pornoEmpty.textContent = pornoState.page > 1 ? 'Plus aucun résultat au-delà de cette page.' : 'Aucun résultat.';
       return;
@@ -1901,6 +2066,140 @@ pornoSearchInput.addEventListener('input', () => {
   pornoCategoryFilter.style.display = 'none';
   if (query.length < 2) return; // une seule lettre ramènerait trop de bruit
   pornoSearchDebounce = setTimeout(loadPornoList, 500);
+});
+
+/* ---------- football en direct: liste + lecture live via le store Nuxt ---------- */
+function buildFootballCard(match) {
+  const card = document.createElement('div');
+  card.className = 'catalogue-card clickable';
+  card.title = 'Regarder ce match';
+  const poster = document.createElement('div');
+  poster.className = 'catalogue-poster';
+  setPoster(poster, null, 'radio');
+  if (match.live) {
+    const liveBadge = document.createElement('span');
+    liveBadge.className = 'version-badge live-badge';
+    liveBadge.textContent = '🔴 DIRECT';
+    card.appendChild(liveBadge);
+  }
+  const info = document.createElement('div');
+  info.className = 'catalogue-info';
+  const titleEl = document.createElement('div');
+  titleEl.className = 'catalogue-title';
+  titleEl.textContent = match.title;
+  const metaEl = document.createElement('div');
+  metaEl.className = 'catalogue-meta';
+  const metaBits = [match.league];
+  if (match.live) {
+    metaBits.push([match.score, match.minute].filter(Boolean).join(' · ') || 'En cours');
+  } else if (match.time) {
+    metaBits.push(match.time);
+  }
+  metaEl.textContent = metaBits.filter(Boolean).join(' · ');
+  info.appendChild(titleEl);
+  info.appendChild(metaEl);
+  card.appendChild(poster);
+  card.appendChild(info);
+  card.addEventListener('click', () => watchFootballMatch(match, card));
+  return card;
+}
+
+function renderFootballItems() {
+  const liveMatches = footballItems.filter(match => match.live);
+  footballGrid.innerHTML = '';
+  if (!liveMatches.length) {
+    footballEmpty.textContent = 'Aucun match en direct pour le moment.';
+    footballEmpty.style.display = 'block';
+    return;
+  }
+  footballEmpty.style.display = 'none';
+  liveMatches.forEach(match => footballGrid.appendChild(buildFootballCard(match)));
+}
+
+let footballListToken = 0;
+async function loadFootballList() {
+  const myToken = ++footballListToken;
+  footballGrid.innerHTML = '';
+  footballEmpty.style.display = 'block';
+  footballEmpty.innerHTML = loaderBlock('Chargement des matchs…');
+  try {
+    const res = await fetch('/api/football/matches');
+    const data = await safeJson(res);
+    if (myToken !== footballListToken) return; // un rechargement plus récent a déjà été lancé entre-temps
+    if (!res.ok) throw new Error(data.error || 'Indisponible.');
+    footballItems = data.items || [];
+    renderFootballItems();
+  } catch (e) {
+    if (myToken !== footballListToken) return;
+    footballEmpty.textContent = 'Erreur: ' + e.message;
+  }
+}
+
+function pollFootballJob(jobId) {
+  return new Promise(resolve => {
+    const tick = async () => {
+      try {
+        const res = await fetch(`/api/progress/${jobId}`);
+        const job = await safeJson(res);
+        const state = (job.episodes && (job.episodes[0] || job.episodes['0'])) || {};
+        if (state.status === 'pret' || state.status === 'erreur') {
+          resolve(state);
+        } else {
+          setTimeout(tick, 1000);
+        }
+      } catch (e) {
+        resolve({ status: 'erreur', error: 'Connexion perdue.' });
+      }
+    };
+    tick();
+  });
+}
+
+async function watchFootballMatch(match, cardEl) {
+  showError('');
+  if (cardEl) cardEl.classList.add('loading');
+  try {
+    const res = await fetch('/api/football/watch', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ url: match.url, key: match.key, title: match.title }),
+    });
+    const data = await safeJson(res);
+    if (!res.ok) throw new Error(data.error || 'Erreur de démarrage.');
+    const state = await pollFootballJob(data.job_id);
+    if (state.status === 'pret') {
+      openVideoModal(state.watch_url, true);
+    } else {
+      throw new Error(state.error || 'Flux indisponible pour ce match.');
+    }
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    if (cardEl) cardEl.classList.remove('loading');
+  }
+}
+
+function updatePornoAdvancedBadge() {
+  const active = !!pornoState.sort || !!pornoState.duration || !!pornoState.hd;
+  pornoAdvancedToggle.classList.toggle('active', active);
+}
+
+pornoAdvancedToggle.addEventListener('click', () => {
+  pornoAdvancedPanel.classList.toggle('open');
+});
+
+pornoHdFilter.addEventListener('change', () => {
+  pornoState.hd = pornoHdFilter.checked;
+  pornoState.page = 1;
+  loadPornoList();
+});
+
+pornoAdvancedReset.addEventListener('click', () => {
+  pornoState.sort = '';
+  pornoState.duration = '';
+  pornoState.hd = false;
+  pornoState.page = 1;
+  loadPornoList();
 });
 
 function guessModeFromUrl(url) {
@@ -2101,7 +2400,7 @@ function showError(msg) {
 
 function renderRatingAndSynopsis(ratingChipEl, synopsisEl, data) {
   if (typeof data.rating === 'number') {
-    ratingChipEl.textContent = `★ ${data.rating.toFixed(1)}/10`;
+    ratingChipEl.innerHTML = `<i data-lucide="star"></i> ${data.rating.toFixed(1)}/10`;
     ratingChipEl.style.display = 'inline-flex';
   } else {
     ratingChipEl.style.display = 'none';
@@ -2123,14 +2422,14 @@ function loaderBlock(text) {
   return `<div class="loader-block"><span class="loader-ring loader-ring-lg"></span><span>${text}</span></div>`;
 }
 
-function setPoster(el, posterUrl, fallbackEmoji) {
-  if (!posterUrl) { el.textContent = fallbackEmoji; return; }
+function setPoster(el, posterUrl, fallbackIcon) {
+  if (!posterUrl) { el.innerHTML = `<i data-lucide="${fallbackIcon}"></i>`; return; }
   el.textContent = '';
   const img = document.createElement('img');
   img.src = posterUrl;
   img.alt = '';
   img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:11px;';
-  img.addEventListener('error', () => { el.textContent = fallbackEmoji; });
+  img.addEventListener('error', () => { el.innerHTML = `<i data-lucide="${fallbackIcon}"></i>`; });
   el.appendChild(img);
 }
 
@@ -2185,6 +2484,23 @@ async function safeJson(res) {
   }
 }
 
+// Une réponse vide (serveur en cours de démarrage, hoquet réseau local) est
+// transitoire la plupart du temps: on retente une fois en silence avant
+// d'afficher une erreur à l'utilisateur.
+async function fetchJsonWithRetry(url, options) {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, options);
+    try {
+      const data = await safeJson(res);
+      return { res, data };
+    } catch (e) {
+      if (attempt > 0 || !/n'a pas répondu/.test(e.message)) throw e;
+      extractBtn.innerHTML = '<span class="btn-spinner"></span> Nouvelle tentative…';
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  }
+}
+
 extractBtn.addEventListener('click', async () => {
   const url = urlInput.value.trim();
   if (!url) { showError('Veuillez saisir une URL.'); return; }
@@ -2203,18 +2519,17 @@ extractBtn.addEventListener('click', async () => {
     showError('Erreur réseau: ' + e.message);
   } finally {
     extractBtn.disabled = false;
-    extractBtn.textContent = '⚡ Extraire & analyser';
+    extractBtn.innerHTML = '<i data-lucide="zap"></i> Extraire &amp; analyser';
   }
 });
 
 async function extractSerie(url) {
   filmPanel.style.display = 'none';
-  const res = await fetch('/api/extract', {
+  const { res, data } = await fetchJsonWithRetry('/api/extract', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({url})
   });
-  const data = await safeJson(res);
   if (!res.ok) { showError(data.error || 'Erreur inconnue.'); return; }
   if (!data.vf.length && !data.vostfr.length) {
     showError("Aucun épisode trouvé sur cette page.");
@@ -2230,12 +2545,11 @@ async function extractSerie(url) {
 
 async function extractFilm(url) {
   episodesPanel.style.display = 'none';
-  const res = await fetch('/api/extract_film', {
+  const { res, data } = await fetchJsonWithRetry('/api/extract_film', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({url})
   });
-  const data = await safeJson(res);
   if (!res.ok) { showError(data.error || 'Erreur inconnue.'); return; }
   currentFilmIsPorno = false;
   currentFilm = data;
@@ -2246,12 +2560,11 @@ async function extractFilm(url) {
 
 async function extractPorno(url) {
   episodesPanel.style.display = 'none';
-  const res = await fetch('/api/extract_porno', {
+  const { res, data } = await fetchJsonWithRetry('/api/extract_porno', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({url})
   });
-  const data = await safeJson(res);
   if (!res.ok) { showError(data.error || 'Erreur inconnue.'); return; }
   currentFilmIsPorno = true;
   currentFilm = {
@@ -2275,7 +2588,7 @@ async function extractPorno(url) {
 
 function renderFilm() {
   filmTitleEl.textContent = currentFilm.title;
-  setPoster(filmPosterEl, currentFilm.poster, '🎞️');
+  setPoster(filmPosterEl, currentFilm.poster, 'film');
   renderRatingAndSynopsis(filmRatingChip, filmSynopsisEl, currentFilm);
   filmMetaEl.textContent = [currentFilm.year, currentFilm.genres, currentFilm.runtime].filter(Boolean).join(' · ');
   filmOptionsEl.innerHTML = '';
@@ -2314,11 +2627,11 @@ filmFavoriteBtn.addEventListener('click', () => {
   });
 });
 
-async function postFilmDownload() {
+async function postFilmDownload(watchOnly) {
   const endpoint = currentFilmIsPorno ? '/api/download_porno' : '/api/download_film';
   const body = currentFilmIsPorno
-    ? {title: currentFilm.title, url: selectedFilmOption.data_url, type: selectedFilmOption.type, source_url: currentUrl}
-    : {title: currentFilm.title, data_url: selectedFilmOption.data_url, poster: currentFilm.poster, url: currentUrl};
+    ? {title: currentFilm.title, url: selectedFilmOption.data_url, type: selectedFilmOption.type, source_url: currentUrl, watch_only: watchOnly}
+    : {title: currentFilm.title, data_url: selectedFilmOption.data_url, poster: currentFilm.poster, url: currentUrl, watch_only: watchOnly};
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -2329,13 +2642,13 @@ async function postFilmDownload() {
   return data;
 }
 
-filmDownloadBtn.addEventListener('click', async () => {
+async function startFilmJob(watchOnly) {
   if (!selectedFilmOption) { showError('Aucune option de téléchargement.'); return; }
   showError('');
 
   let data;
   try {
-    data = await postFilmDownload();
+    data = await postFilmDownload(watchOnly);
   } catch (e) {
     showError(e.message);
     return;
@@ -2362,11 +2675,14 @@ filmDownloadBtn.addEventListener('click', async () => {
   retryHandlers[0] = retryFilmDownload;
 
   pollProgress(data.job_id, [0]);
-});
+}
+
+filmDownloadBtn.addEventListener('click', () => startFilmJob(false));
+filmWatchBtn.addEventListener('click', () => startFilmJob(true));
 
 function renderEpisodes() {
   seriesTitleEl.textContent = currentEpisodes.series_title;
-  setPoster(mediaPosterEl, currentEpisodes.poster, '🎬');
+  setPoster(mediaPosterEl, currentEpisodes.poster, 'clapperboard');
   renderRatingAndSynopsis(mediaRatingChip, mediaSynopsisEl, currentEpisodes);
   const langs = ['vf', 'vostfr'].filter(l => currentEpisodes[l].length);
   currentLang = langs[0];
@@ -2454,7 +2770,7 @@ function updateSelectionCount() {
     : 'Aucun épisode sélectionné';
 }
 
-downloadBtn.addEventListener('click', async () => {
+async function startSeriesJob(watchOnly) {
   const numbers = [...epGrid.querySelectorAll('input:checked')].map(b => parseInt(b.value, 10));
   if (!numbers.length) { showError('Sélectionnez au moins un épisode.'); return; }
   showError('');
@@ -2469,6 +2785,7 @@ downloadBtn.addEventListener('click', async () => {
       numbers,
       quality: currentQuality,
       poster: currentEpisodes.poster,
+      watch_only: watchOnly,
     })
   });
   const data = await safeJson(res);
@@ -2497,24 +2814,29 @@ downloadBtn.addEventListener('click', async () => {
   });
 
   pollProgress(data.job_id, numbers);
-});
+}
+
+downloadBtn.addEventListener('click', () => startSeriesJob(false));
+watchBtn.addEventListener('click', () => startSeriesJob(true));
 
 const STATUS_LABELS = {
   en_attente: 'en attente',
   resolution: 'résolution du lien',
   telechargement: 'téléchargement',
   termine: 'terminé',
+  pret: 'prêt à regarder',
   erreur: 'erreur',
 };
 
 const retryHandlers = {};
 const failedNumbers = {};
+const autoOpenedWatch = {};
 let activePolls = 0;
 
 function updateRetryAllVisibility() {
   const count = Object.keys(failedNumbers).length;
   if (activePolls === 0 && count > 0) {
-    retryAllBtn.textContent = `↻ Réessayer les échecs (${count})`;
+    retryAllBtn.innerHTML = `<i data-lucide="rotate-ccw"></i> Réessayer les échecs (${count})`;
     retryAllRow.style.display = 'flex';
   } else {
     retryAllRow.style.display = 'none';
@@ -2524,15 +2846,31 @@ function updateRetryAllVisibility() {
 const videoModalOverlay = document.getElementById('video-modal-overlay');
 const videoModalPlayer = document.getElementById('video-modal-player');
 const videoModalClose = document.getElementById('video-modal-close');
+let activeHls = null;
 
-function openVideoModal(src) {
-  videoModalPlayer.src = src;
+function destroyActiveHls() {
+  if (activeHls) {
+    activeHls.destroy();
+    activeHls = null;
+  }
+}
+
+function openVideoModal(src, isHls) {
+  destroyActiveHls();
+  if (isHls && !videoModalPlayer.canPlayType('application/vnd.apple.mpegurl') && window.Hls && Hls.isSupported()) {
+    activeHls = new Hls();
+    activeHls.loadSource(src);
+    activeHls.attachMedia(videoModalPlayer);
+  } else {
+    videoModalPlayer.src = src;
+  }
   videoModalOverlay.style.display = 'flex';
   videoModalPlayer.play().catch(() => {});
 }
 
 function closeVideoModal() {
   videoModalPlayer.pause();
+  destroyActiveHls();
   videoModalPlayer.removeAttribute('src');
   videoModalPlayer.load();
   videoModalOverlay.style.display = 'none';
@@ -2580,7 +2918,7 @@ pornoPasswordForm.addEventListener('submit', event => {
     closePornoGate();
     if (callback) callback();
   } else {
-    pornoPasswordError.style.display = 'block';
+    pornoPasswordError.style.display = 'flex';
     pornoPasswordInput.value = '';
     pornoPasswordInput.focus();
   }
@@ -2612,13 +2950,13 @@ function renderDetail(item) {
   if (!item) {
     detailTitle.textContent = 'Introuvable';
     detailMeta.textContent = '';
-    detailPoster.textContent = '❓';
+    detailPoster.innerHTML = '<i data-lucide="circle-help"></i>';
     detailSourceLink.style.display = 'none';
     detailEpisodeList.innerHTML = '<p class="muted">Cet élément n\'existe plus dans la bibliothèque.</p>';
     return;
   }
   detailTitle.textContent = item.title;
-  setPoster(detailPoster, item.poster, item.type === 'film' ? '🎞️' : '🎬');
+  setPoster(detailPoster, item.poster, item.type === 'film' ? 'film' : 'clapperboard');
   detailMeta.textContent = item.type === 'film' ? 'Film' : `${item.episode_count} épisode(s) téléchargé(s)`;
   if (item.url) {
     detailSourceLink.href = item.url;
@@ -2651,7 +2989,7 @@ function renderDetail(item) {
         playBtn.type = 'button';
         playBtn.className = 'ctrl-btn play-btn';
         playBtn.title = 'Lire';
-        playBtn.textContent = '▶';
+        playBtn.innerHTML = '<i data-lucide="play"></i>';
         playBtn.addEventListener('click', () => openVideoModal(ep.stream_url));
         const subtitleUrl = ep.stream_url.replace('/api/library/stream/', '/api/library/subtitle/');
         const actions = document.createElement('div');
@@ -2742,7 +3080,7 @@ function createSubtitleButton(uploadFn) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'ctrl-btn subtitle-btn';
-  btn.textContent = '💬';
+  btn.innerHTML = '<i data-lucide="captions"></i>';
   btn.title = 'Ajouter un sous-titre (.srt/.vtt)';
   btn.addEventListener('click', () => input.click());
 
@@ -2753,10 +3091,10 @@ function createSubtitleButton(uploadFn) {
     btn.disabled = true;
     try {
       await uploadFn(file);
-      btn.textContent = '✓';
+      btn.innerHTML = '<i data-lucide="check"></i>';
       btn.title = 'Sous-titre ajouté';
       setTimeout(() => {
-        btn.textContent = '💬';
+        btn.innerHTML = '<i data-lucide="captions"></i>';
         btn.title = 'Ajouter un sous-titre (.srt/.vtt)';
         btn.disabled = false;
       }, 1500);
@@ -2797,16 +3135,16 @@ function renderProgressControls(jobId, num, ep) {
     }
     const isPaused = !!ep.paused;
     btn.dataset.paused = String(isPaused);
-    btn.textContent = isPaused ? '▶' : '⏸';
+    btn.innerHTML = isPaused ? '<i data-lucide="play"></i>' : '<i data-lucide="pause"></i>';
     btn.title = isPaused ? 'Reprendre le téléchargement' : 'Mettre en pause';
 
     if (ep.watch_url && !controls.querySelector('.watch-btn')) {
       const watchBtn = document.createElement('button');
       watchBtn.type = 'button';
       watchBtn.className = 'ctrl-btn watch-btn';
-      watchBtn.textContent = '👁';
+      watchBtn.innerHTML = '<i data-lucide="eye"></i>';
       watchBtn.title = 'Regarder en ligne (sans attendre la fin du téléchargement)';
-      watchBtn.addEventListener('click', () => openVideoModal(ep.watch_url));
+      watchBtn.addEventListener('click', () => openVideoModal(ep.watch_url, ep.is_hls));
       controls.insertBefore(watchBtn, btn);
     }
   } else if (ep.status === 'termine') {
@@ -2815,11 +3153,18 @@ function renderProgressControls(jobId, num, ep) {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'ctrl-btn play-btn';
-      btn.textContent = '▶';
+      btn.innerHTML = '<i data-lucide="play"></i>';
       btn.title = 'Lire la vidéo';
       btn.addEventListener('click', () => openVideoModal(`/api/stream/${jobId}/${num}`));
       controls.appendChild(btn);
       controls.appendChild(createSubtitleButton(file => uploadSubtitle(`/api/subtitle/${jobId}/${num}`, file)));
+    }
+  } else if (ep.status === 'pret') {
+    controls.innerHTML = '';
+    const key = `${jobId}:${num}`;
+    if (!autoOpenedWatch[key]) {
+      autoOpenedWatch[key] = true;
+      openVideoModal(ep.watch_url, ep.is_hls);
     }
   } else {
     controls.innerHTML = '';
@@ -2879,7 +3224,7 @@ function pollProgress(jobId, numbers) {
           const fileUrl = `/api/file/${jobId}/${num}`;
           const link = document.createElement('a');
           link.href = fileUrl;
-          link.textContent = '⬇ Récupérer le fichier';
+          link.innerHTML = '<i data-lucide="download" class="inline-icon"></i> Récupérer le fichier';
           link.style.color = '#6c5ce7';
           size.appendChild(document.createElement('br'));
           size.appendChild(link);
@@ -2902,7 +3247,7 @@ function pollProgress(jobId, numbers) {
         if (retryFn) {
           const retryBtn = document.createElement('button');
           retryBtn.className = 'secondary';
-          retryBtn.textContent = '↻ Réessayer';
+          retryBtn.innerHTML = '<i data-lucide="rotate-ccw" class="inline-icon"></i> Réessayer';
           retryBtn.style.marginLeft = '8px';
           retryBtn.style.padding = '2px 10px';
           retryBtn.style.fontSize = '0.8rem';

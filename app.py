@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 import uuid
+from urllib.parse import urljoin
 
 # Doit s'exécuter avant tout import tiers (requests/flask/playwright plus
 # bas): sur un clone fraîchement récupéré, ces paquets ne sont pas encore
@@ -47,13 +48,20 @@ from telecharger_episodes import (
     FILM_CATEGORIES,
     SERIES_CATEGORIES,
     PORNO_CATEGORIES,
+    PORNO_SORT_OPTIONS,
+    PORNO_SORT_VALUES,
+    PORNO_DURATION_OPTIONS,
     FrenchStreamScraper,
     PornoScraper,
+    FootballScraper,
     download_file,
     download_hls,
     fetch_latest_archive,
     probe_resolution_label,
     read_local_video_duration,
+    _parse_m3u8_variants,
+    _parse_m3u8_segments,
+    _parse_m3u8_init_segment,
 )
 from anime_sama import AnimeSamaScraper, resolve_episode_download
 
@@ -72,6 +80,13 @@ app = Flask(
 scraper = FrenchStreamScraper()
 anime_sama_scraper = AnimeSamaScraper()
 porno_scraper = PornoScraper()
+football_scraper = FootballScraper()
+
+# Scraper le site de streaming sportif lance un vrai navigateur (lent, ~5-10s):
+# on garde le dernier relevé en mémoire un court instant pour que changer de
+# filtre (ligue/direct) côté interface ne relance pas un scraping à chaque clic.
+_football_cache = {"ts": 0.0, "matches": []}
+FOOTBALL_CACHE_TTL = 20
 
 
 def _is_anime_sama(url):
@@ -463,6 +478,7 @@ def api_download():
     if quality not in {"auto", "normale", "originale"}:
         quality = "auto"
     poster = data.get("poster")
+    watch_only = bool(data.get("watch_only"))
 
     if not url or language not in {"vf", "vostfr"} or not numbers:
         return jsonify({"error": "Paramètres invalides."}), 400
@@ -484,13 +500,13 @@ def api_download():
         # seul lien par épisode: pas de notion de qualité à transmettre ici.
         thread = threading.Thread(
             target=_run_download_job_anime_sama,
-            args=(job_id, url, series_title, language, numbers, poster),
+            args=(job_id, url, series_title, language, numbers, poster, watch_only),
             daemon=True,
         )
     else:
         thread = threading.Thread(
             target=_run_download_job,
-            args=(job_id, url, series_title, language, numbers, quality, poster),
+            args=(job_id, url, series_title, language, numbers, quality, poster, watch_only),
             daemon=True,
         )
     thread.start()
@@ -658,6 +674,241 @@ def api_watch(job_id, episode_key):
     return Response(generate(), status=upstream.status_code, headers=response_headers)
 
 
+_M3U8_KEY_URI_RE = re.compile(r'(#EXT-X-KEY:[^\n]*URI=")([^"]+)(")')
+
+
+def _rewrite_hls_manifest(text, base_url, job_id, episode_key, state):
+    """Réécrit une playlist média HLS pour que chaque URL qu'elle référence
+    (segments, segment d'initialisation fMP4, clé de chiffrement) passe par
+    /api/hls_segment avec le bon Referer anti-hotlink, afin que hls.js (dans
+    le navigateur) puisse lire le flux sans attendre un téléchargement local.
+    Les URLs réelles ne sont jamais exposées au client: seul un jeton,
+    retrouvé côté serveur dans l'état du job, permet de les résoudre."""
+    proxy_map = state.setdefault("hls_proxy_map", {})
+
+    def proxy_url(absolute_url):
+        token = uuid.uuid4().hex
+        proxy_map[token] = absolute_url
+        return f"/api/hls_segment/{job_id}/{episode_key}/{token}"
+
+    def replace_key(match):
+        absolute = urljoin(base_url, match.group(2))
+        return f"{match.group(1)}{proxy_url(absolute)}{match.group(3)}"
+
+    text = _M3U8_KEY_URI_RE.sub(replace_key, text)
+
+    lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#EXT-X-MAP"):
+            match = re.search(r'URI="([^"]+)"', stripped)
+            if match:
+                absolute = urljoin(base_url, match.group(1))
+                stripped = stripped.replace(match.group(1), proxy_url(absolute))
+            lines.append(stripped)
+        elif stripped and not stripped.startswith("#"):
+            lines.append(proxy_url(urljoin(base_url, stripped)))
+        else:
+            lines.append(line)
+    return "\n".join(lines)
+
+
+@app.route("/api/hls/<job_id>/<int:episode_key>")
+def api_hls_manifest(job_id, episode_key):
+    """Playlist HLS prête pour hls.js: résout la master playlist vers la
+    meilleure variante puis réécrit la playlist média obtenue (voir
+    _rewrite_hls_manifest) — permet de regarder un flux HLS en direct depuis
+    l'hébergeur sans jamais écrire de fichier sur le serveur."""
+    state = _episode_state(job_id, episode_key)
+    remote_url = state.get("remote_url") if state else None
+    if not remote_url:
+        abort(404)
+
+    referer = state.get("remote_referer") or remote_url
+    headers = {"User-Agent": USER_AGENT, "Referer": referer}
+
+    try:
+        response = requests.get(remote_url, headers=headers, timeout=20)
+        response.raise_for_status()
+    except requests.RequestException:
+        abort(502)
+
+    text = response.text
+    base_url = remote_url
+    if "#EXT-X-STREAM-INF" in text:
+        variants = _parse_m3u8_variants(text, base_url)
+        if not variants:
+            abort(502)
+        base_url = variants[0][1]
+        try:
+            response = requests.get(base_url, headers=headers, timeout=20)
+            response.raise_for_status()
+        except requests.RequestException:
+            abort(502)
+        text = response.text
+
+    rewritten = _rewrite_hls_manifest(text, base_url, job_id, episode_key, state)
+    return Response(rewritten, mimetype="application/vnd.apple.mpegurl")
+
+
+@app.route("/api/hls_segment/<job_id>/<int:episode_key>/<token>")
+def api_hls_segment(job_id, episode_key, token):
+    """Relaie un segment/clé référencé par une playlist réécrite par
+    _rewrite_hls_manifest, avec le Referer attendu par l'hébergeur."""
+    state = _episode_state(job_id, episode_key)
+    absolute_url = (state or {}).get("hls_proxy_map", {}).get(token)
+    if not absolute_url:
+        abort(404)
+
+    headers = {"User-Agent": USER_AGENT, "Referer": state.get("remote_referer") or absolute_url}
+
+    try:
+        upstream = requests.get(absolute_url, headers=headers, stream=True, timeout=30)
+    except requests.RequestException:
+        abort(502)
+    if upstream.status_code not in (200, 206):
+        upstream.close()
+        abort(502)
+
+    def generate():
+        try:
+            for chunk in upstream.iter_content(chunk_size=65536):
+                if chunk:
+                    yield chunk
+        finally:
+            upstream.close()
+
+    content_type = upstream.headers.get("Content-Type", "application/octet-stream")
+    return Response(generate(), status=upstream.status_code, headers={"Content-Type": content_type})
+
+
+# Championnats "épinglés" (toujours proposés comme filtre, même vides) pour
+# que l'utilisateur retrouve toujours les mêmes chips plutôt que de dépendre
+# du libellé exact (pouvant varier) renvoyé par le site scrapé. Les mots-clés
+# sont cherchés dans le libellé de ligue en minuscules, espaces compris aux
+# extrémités pour éviter qu'un mot-clé court ("ldc") ne matche à l'intérieur
+# d'un autre mot.
+FOOTBALL_PINNED_LEAGUES = [
+    {"id": "ldc", "label": "Ligue des Champions", "keywords": ("champions league", "ligue des champions", " ldc ")},
+    {"id": "la_liga", "label": "LaLiga", "keywords": ("la liga", "laliga")},
+    {"id": "ligue_1", "label": "Ligue 1", "keywords": ("ligue 1",)},
+    {"id": "premier_league", "label": "Premier League", "keywords": ("premier league",)},
+    {"id": "serie_a", "label": "Serie A", "keywords": ("serie a",)},
+    {"id": "bundesliga", "label": "Bundesliga", "keywords": ("bundesliga",)},
+]
+
+FOOTBALL_STATUS_OPTIONS = [
+    {"id": "all", "label": "Tous les matchs"},
+    {"id": "live", "label": "🔴 En direct"},
+    {"id": "upcoming", "label": "📅 Programme"},
+]
+
+
+def _football_pinned_id(league_name):
+    low = f" {(league_name or '').lower()} "
+    for entry in FOOTBALL_PINNED_LEAGUES:
+        if any(keyword in low for keyword in entry["keywords"]):
+            return entry["id"]
+    return None
+
+
+@app.route("/api/football/matches")
+def api_football_matches():
+    """Matchs actuellement affichés sur le site (en direct + à venir, triés
+    par heure de coup d'envoi), avec deux filtres indépendants pour
+    l'interface: le statut (direct / programme) et le championnat (ligues
+    épinglées + reste des ligues trouvées). Le filtrage se fait côté client
+    sur ce relevé, pour éviter de relancer Playwright à chaque clic."""
+    now = time.time()
+    if now - _football_cache["ts"] > FOOTBALL_CACHE_TTL:
+        try:
+            _football_cache["matches"] = football_scraper.list_matches(limit=200)
+        except Exception:
+            pass
+        _football_cache["ts"] = now
+
+    matches = _football_cache["matches"]
+    for match in matches:
+        match["competition_id"] = _football_pinned_id(match.get("league"))
+    matches.sort(key=lambda match: (not match.get("live"), match.get("time") or ""))
+
+    other_leagues, seen = [], set()
+    for match in matches:
+        if match.get("competition_id"):
+            continue
+        name = (match.get("league") or "Autres").strip() or "Autres"
+        if name not in seen:
+            seen.add(name)
+            other_leagues.append(name)
+    other_leagues.sort()
+
+    league_options = [{"id": "all", "label": "Toutes les ligues"}]
+    league_options += [{"id": entry["id"], "label": entry["label"]} for entry in FOOTBALL_PINNED_LEAGUES]
+    league_options += [{"id": name, "label": name} for name in other_leagues]
+
+    return jsonify({
+        "items": matches,
+        "status_options": FOOTBALL_STATUS_OPTIONS,
+        "league_options": league_options,
+        "live_count": sum(1 for match in matches if match.get("live")),
+    })
+
+
+def _run_football_watch_job(job_id, match):
+    job = jobs[job_id]
+    state = job["episodes"][0]
+    try:
+        stream = football_scraper.get_stream(match)
+    except Exception as error:
+        state["status"] = "erreur"
+        state["error"] = str(error)
+        job["done"] = True
+        return
+    if not stream or not stream.get("url"):
+        state["status"] = "erreur"
+        state["error"] = "Flux introuvable (le match n'a peut-être pas encore commencé)."
+        job["done"] = True
+        return
+    state["remote_url"] = stream["url"]
+    state["remote_referer"] = stream.get("referer") or match.get("url")
+    state["is_hls"] = True
+    state["watch_url"] = f"/api/hls/{job_id}/0"
+    state["status"] = "pret"
+    job["done"] = True
+
+
+@app.route("/api/football/watch", methods=["POST"])
+def api_football_watch():
+    """Résout le flux .m3u8 d'un match et renvoie un job_id, sur le même
+    modèle que /api/download_porno en watch_only: le client poll
+    /api/progress/<job_id> puis ouvre le lecteur avec watch_url une fois le
+    statut 'pret', réutilisant /api/hls/<job_id>/<key> tel quel.
+
+    Le lien du match n'est pas toujours un <a href> exploitable (parfois
+    porté par une icône @click): `key` permet à get_stream() de retrouver et
+    cliquer la même ligne quand `url` est absent."""
+    data = request.json or {}
+    match_url = (data.get("url") or "").strip() or None
+    match_key = (data.get("key") or "").strip() or None
+    if not match_url and not match_key:
+        return jsonify({"error": "Match introuvable (ni URL ni référence de ligne)."}), 400
+
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {
+        "episodes": {0: {
+            "status": "resolution", "downloaded": 0, "total": 0, "error": None,
+            "quality_label": None, "paused": False,
+        }},
+        "done": False,
+    }
+
+    match = {"url": match_url, "key": match_key, "title": data.get("title") or ""}
+    thread = threading.Thread(target=_run_football_watch_job, args=(job_id, match), daemon=True)
+    thread.start()
+
+    return jsonify({"job_id": job_id})
+
+
 @app.route("/api/extract_film", methods=["POST"])
 def api_extract_film():
     url = (request.json or {}).get("url", "").strip()
@@ -679,6 +930,7 @@ def api_download_film():
     data_url = data.get("data_url", "").strip()
     poster = data.get("poster")
     source_url = data.get("url")
+    watch_only = bool(data.get("watch_only"))
     if not data_url:
         return jsonify({"error": "Paramètres invalides."}), 400
 
@@ -693,7 +945,7 @@ def api_download_film():
 
     thread = threading.Thread(
         target=_run_movie_download_job,
-        args=(job_id, title, data_url, poster, source_url),
+        args=(job_id, title, data_url, poster, source_url, watch_only),
         daemon=True,
     )
     thread.start()
@@ -701,16 +953,17 @@ def api_download_film():
     return jsonify({"job_id": job_id})
 
 
-def _run_movie_download_job(job_id, title, data_url, poster=None, source_url=None):
+def _run_movie_download_job(job_id, title, data_url, poster=None, source_url=None, watch_only=False):
     job = jobs[job_id]
     state = job["episodes"][0]
     safe_title = re.sub(r"[^\w\s-]", "", title).strip().replace(" ", "_") or "film"
     film_dir = os.path.join(DOWNLOADS_ROOT, "films", _safe_folder_name(title))
-    poster_file = _download_poster(poster, os.path.join(film_dir, f"{safe_title}_affiche"))
-    _write_meta(
-        os.path.join(film_dir, f"{safe_title}.json"),
-        {"title": title, "poster": poster, "poster_file": poster_file, "url": source_url, "type": "film"},
-    )
+    if not watch_only:
+        poster_file = _download_poster(poster, os.path.join(film_dir, f"{safe_title}_affiche"))
+        _write_meta(
+            os.path.join(film_dir, f"{safe_title}.json"),
+            {"title": title, "poster": poster, "poster_file": poster_file, "url": source_url, "type": "film"},
+        )
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=scraper.headless, args=LOW_MEMORY_CHROMIUM_ARGS)
@@ -722,11 +975,16 @@ def _run_movie_download_job(job_id, title, data_url, poster=None, source_url=Non
                 state["error"] = "Lien de téléchargement introuvable."
                 return
 
-            state["status"] = "telechargement"
             state["quality_label"] = probe_resolution_label(result["url"], referer=result.get("referer"))
             state["remote_url"] = result["url"]
             state["remote_referer"] = result.get("referer")
             state["watch_url"] = f"/api/watch/{job_id}/0"
+
+            if watch_only:
+                state["status"] = "pret"
+                return
+
+            state["status"] = "telechargement"
             dest_path = os.path.join(film_dir, f"{safe_title}.mp4")
             state["path"] = dest_path
 
@@ -749,7 +1007,9 @@ def _run_movie_download_job(job_id, title, data_url, poster=None, source_url=Non
 def api_porno_search():
     """Lister les vidéos du site porno: recherche par mot-clé si `q` est
     fourni, sinon parcours du catalogue général filtrable par catégorie
-    (comportement équivalent à /api/latest pour les films/séries)."""
+    (comportement équivalent à /api/latest pour les films/séries). Le filtre
+    avancé (tri, HD, durée) est transmis tel quel au site, qui fait le
+    filtrage lui-même sur tout son catalogue (voir PornoScraper.search_videos)."""
     query = (request.args.get("q") or "").strip() or None
     by_id = {c["id"]: c for c in PORNO_CATEGORIES}
     category_id = request.args.get("category") or PORNO_CATEGORIES[0]["id"]
@@ -759,13 +1019,32 @@ def api_porno_search():
         page_num = max(1, int(request.args.get("page", 1)))
     except (TypeError, ValueError):
         page_num = 1
+
+    sort_id = request.args.get("sort") or ""
+    if sort_id not in PORNO_SORT_VALUES:
+        sort_id = ""
+    hd_only = request.args.get("hd") == "1"
+    duration_by_id = {d["id"]: d for d in PORNO_DURATION_OPTIONS}
+    duration_id = request.args.get("duration") or ""
+    if duration_id not in duration_by_id:
+        duration_id = ""
+    duration = duration_by_id[duration_id]
+
     try:
-        items, has_next = porno_scraper.search_videos(query=query, page=page_num, category=category_id)
+        items, has_next = porno_scraper.search_videos(
+            query=query, page=page_num, category=category_id,
+            sort=sort_id, hd=hd_only, min_duration=duration["min"], max_duration=duration["max"],
+        )
     except Exception as error:
         return jsonify({"error": f"Erreur de recherche: {error}"}), 500
     return jsonify({
         "categories": [{"id": c["id"], "label": c["label"]} for c in PORNO_CATEGORIES],
         "active_category": category_id,
+        "sort_options": PORNO_SORT_OPTIONS,
+        "active_sort": sort_id,
+        "duration_options": [{"id": d["id"], "label": d["label"]} for d in PORNO_DURATION_OPTIONS],
+        "active_duration": duration_id,
+        "active_hd": hd_only,
         "items": items,
         "page": page_num,
         "total_pages": None,
@@ -795,6 +1074,7 @@ def api_download_porno():
     data_url = (data.get("url") or "").strip()
     kind = data.get("type") if data.get("type") in ("mp4", "hls") else "mp4"
     source_url = data.get("source_url", "")
+    watch_only = bool(data.get("watch_only"))
     if not data_url:
         return jsonify({"error": "Paramètres invalides."}), 400
 
@@ -809,7 +1089,7 @@ def api_download_porno():
 
     thread = threading.Thread(
         target=_run_porno_download_job,
-        args=(job_id, title, data_url, kind, source_url),
+        args=(job_id, title, data_url, kind, source_url, watch_only),
         daemon=True,
     )
     thread.start()
@@ -817,16 +1097,23 @@ def api_download_porno():
     return jsonify({"job_id": job_id})
 
 
-def _run_porno_download_job(job_id, title, data_url, kind, source_url):
+def _run_porno_download_job(job_id, title, data_url, kind, source_url, watch_only=False):
     job = jobs[job_id]
     state = job["episodes"][0]
     safe_title = re.sub(r"[^\w\s-]", "", title).strip().replace(" ", "_")[:80] or "video"
+    state["remote_url"] = data_url
+    state["remote_referer"] = source_url
+    state["is_hls"] = kind == "hls"
+    state["watch_url"] = f"/api/hls/{job_id}/0" if kind == "hls" else f"/api/watch/{job_id}/0"
+
+    if watch_only:
+        state["status"] = "pret"
+        job["done"] = True
+        return
+
     dest_path = os.path.join(DOWNLOADS_ROOT, "porno", f"{safe_title}.mp4")
     state["path"] = dest_path
     state["status"] = "telechargement"
-    state["remote_url"] = data_url
-    state["remote_referer"] = source_url
-    state["watch_url"] = f"/api/watch/{job_id}/0"
 
     def on_progress(downloaded, total):
         state["downloaded"] = downloaded
@@ -845,7 +1132,7 @@ def _run_porno_download_job(job_id, title, data_url, kind, source_url):
     job["done"] = True
 
 
-def _run_download_job_anime_sama(job_id, series_url, series_title, language, numbers, poster=None):
+def _run_download_job_anime_sama(job_id, series_url, series_title, language, numbers, poster=None, watch_only=False):
     """Équivalent de _run_download_job pour anime-sama.to: l'extraction de la
     liste d'épisodes se fait en simples requêtes HTTP, mais la résolution de
     certains hébergeurs (uqload, ansembed, smoothpre...) nécessite un vrai
@@ -854,11 +1141,12 @@ def _run_download_job_anime_sama(job_id, series_url, series_title, language, num
     job = jobs[job_id]
     safe_title = re.sub(r"[^\w\s-]", "", series_title).strip().replace(" ", "_") or "serie"
     output_dir = os.path.join(DOWNLOADS_ROOT, safe_title, language)
-    poster_file = _download_poster(poster, os.path.join(DOWNLOADS_ROOT, safe_title, "affiche"))
-    _write_meta(
-        os.path.join(DOWNLOADS_ROOT, safe_title, "_meta.json"),
-        {"title": series_title, "poster": poster, "poster_file": poster_file, "url": series_url, "type": "serie"},
-    )
+    if not watch_only:
+        poster_file = _download_poster(poster, os.path.join(DOWNLOADS_ROOT, safe_title, "affiche"))
+        _write_meta(
+            os.path.join(DOWNLOADS_ROOT, safe_title, "_meta.json"),
+            {"title": series_title, "poster": poster, "poster_file": poster_file, "url": series_url, "type": "serie"},
+        )
 
     try:
         episodes = anime_sama_scraper.extract_episodes(series_url)
@@ -889,14 +1177,21 @@ def _run_download_job_anime_sama(job_id, series_url, series_title, language, num
                     state["error"] = "Lien de téléchargement introuvable (aucun hébergeur exploitable pour cet épisode)."
                     continue
 
-                state["status"] = "telechargement"
+                is_hls = bool(result.get("hls"))
+                state["is_hls"] = is_hls
                 state["quality_label"] = (
-                    "Résolution HLS…" if result.get("hls")
+                    "Résolution HLS…" if is_hls
                     else probe_resolution_label(result["url"], referer=result.get("referer"))
                 )
                 state["remote_url"] = result["url"]
                 state["remote_referer"] = result.get("referer")
-                state["watch_url"] = f"/api/watch/{job_id}/{number}"
+                state["watch_url"] = f"/api/hls/{job_id}/{number}" if is_hls else f"/api/watch/{job_id}/{number}"
+
+                if watch_only:
+                    state["status"] = "pret"
+                    continue
+
+                state["status"] = "telechargement"
                 filename = f"{safe_title}_{language.upper()}_E{number:02d}.mp4"
                 dest_path = os.path.join(output_dir, filename)
                 state["path"] = dest_path
@@ -927,15 +1222,16 @@ def _run_download_job_anime_sama(job_id, series_url, series_title, language, num
     job["done"] = True
 
 
-def _run_download_job(job_id, series_url, series_title, language, numbers, quality="auto", poster=None):
+def _run_download_job(job_id, series_url, series_title, language, numbers, quality="auto", poster=None, watch_only=False):
     job = jobs[job_id]
     safe_title = re.sub(r"[^\w\s-]", "", series_title).strip().replace(" ", "_") or "serie"
     output_dir = os.path.join(DOWNLOADS_ROOT, safe_title, language)
-    poster_file = _download_poster(poster, os.path.join(DOWNLOADS_ROOT, safe_title, "affiche"))
-    _write_meta(
-        os.path.join(DOWNLOADS_ROOT, safe_title, "_meta.json"),
-        {"title": series_title, "poster": poster, "poster_file": poster_file, "url": series_url, "type": "serie"},
-    )
+    if not watch_only:
+        poster_file = _download_poster(poster, os.path.join(DOWNLOADS_ROOT, safe_title, "affiche"))
+        _write_meta(
+            os.path.join(DOWNLOADS_ROOT, safe_title, "_meta.json"),
+            {"title": series_title, "poster": poster, "poster_file": poster_file, "url": series_url, "type": "serie"},
+        )
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=scraper.headless, args=LOW_MEMORY_CHROMIUM_ARGS)
@@ -963,11 +1259,16 @@ def _run_download_job(job_id, series_url, series_title, language, numbers, quali
                     state["error"] = "Lien de téléchargement introuvable."
                     continue
 
-                state["status"] = "telechargement"
                 state["quality_label"] = probe_resolution_label(result["url"], referer=result.get("referer"))
                 state["remote_url"] = result["url"]
                 state["remote_referer"] = result.get("referer")
                 state["watch_url"] = f"/api/watch/{job_id}/{number}"
+
+                if watch_only:
+                    state["status"] = "pret"
+                    continue
+
+                state["status"] = "telechargement"
                 filename = f"{safe_title}_{language.upper()}_E{number:02d}.mp4"
                 dest_path = os.path.join(output_dir, filename)
                 state["path"] = dest_path

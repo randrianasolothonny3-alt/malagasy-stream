@@ -10,6 +10,18 @@ import sys
 import threading
 import time
 
+# En .exe (console masquée), il n'y a plus de terminal pour voir les erreurs:
+# on redirige donc stdout/stderr vers un fichier journal persistant, afin de
+# pouvoir diagnostiquer un problème après coup.
+if getattr(sys, "frozen", False):
+    log_dir = os.path.join(os.environ.get("LOCALAPPDATA", "."), "Malagasy-Stream")
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, "app.log")
+    log_file = open(log_path, "a", encoding="utf-8", buffering=1)
+    sys.stdout = log_file
+    sys.stderr = log_file
+    print(f"\n=== Démarrage {time.strftime('%Y-%m-%d %H:%M:%S')} ===")
+
 # Sur un clone fraîchement récupéré (autre PC), les paquets du projet ne sont
 # pas encore installés. En .exe figé (PyInstaller), tout est déjà embarqué et
 # sys.executable n'est de toute façon pas un interpréteur Python utilisable
@@ -58,11 +70,20 @@ PORT = 5000
 
 
 def run_server():
-    app.run(host="127.0.0.1", port=PORT, debug=False, use_reloader=False, threaded=True)
+    try:
+        app.run(host="127.0.0.1", port=PORT, debug=False, use_reloader=False, threaded=True)
+    except Exception:
+        import traceback
+        traceback.print_exc()
 
 
 if __name__ == "__main__":
     threading.Thread(target=run_server, daemon=True).start()
     time.sleep(1.2)  # laisse le serveur Flask démarrer avant d'ouvrir la fenêtre
-    webview.create_window("Malagasy-Stream", f"http://127.0.0.1:{PORT}", width=900, height=750)
-    webview.start()
+    try:
+        webview.create_window("Malagasy-Stream", f"http://127.0.0.1:{PORT}", width=900, height=750)
+        webview.start()
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        raise
