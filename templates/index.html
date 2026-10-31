@@ -752,6 +752,29 @@
   .card-fav-btn.active { background: rgba(245, 180, 0, 0.22); border-color: rgba(245, 180, 0, 0.55); color: #f5b400; }
   .card-dl-btn:hover:not(:disabled) { background: rgba(0, 200, 83, 0.28); border-color: rgba(0, 200, 83, 0.6); color: var(--cyan-light); }
 
+  /* ---------- toasts (confirmation visible depuis n'importe quel écran, ex: "téléchargement démarré" déclenché depuis une carte) ---------- */
+  .toast-stack {
+    position: fixed; right: 1.1rem; bottom: 1.1rem; z-index: 90;
+    display: flex; flex-direction: column-reverse; gap: 0.6rem; pointer-events: none;
+    max-width: min(360px, calc(100vw - 2.2rem));
+  }
+  .toast {
+    display: flex; align-items: flex-start; gap: 0.6rem;
+    padding: 0.75rem 0.9rem; border-radius: 12px;
+    background: rgba(var(--surface-rgb), 0.97); border: 1px solid var(--border);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.3);
+    color: var(--text); font-size: 0.84rem; line-height: 1.35;
+    pointer-events: auto; opacity: 0; transform: translateY(8px); transition: opacity 180ms ease, transform 180ms ease;
+  }
+  .toast.show { opacity: 1; transform: none; }
+  .toast-icon { flex: 0 0 auto; width: 1.6rem; height: 1.6rem; border-radius: 999px; display: grid; place-items: center; margin-top: 0.05rem; }
+  .toast-icon i { width: 14px; height: 14px; }
+  .toast-success .toast-icon { background: rgba(0, 200, 83, 0.18); color: var(--cyan-text); }
+  .toast-error .toast-icon { background: rgba(232, 17, 45, 0.16); color: var(--accent-text); }
+  .toast-text { flex: 1; min-width: 0; }
+  .toast-close { flex: 0 0 auto; background: none; border: none; color: var(--text-faint); cursor: pointer; padding: 0.1rem; box-shadow: none; }
+  .toast-close:hover { color: var(--text); transform: none; box-shadow: none; filter: none; }
+
   /* ---------- site status filter (home search) ---------- */
   .site-filter { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
   .site-filter-chip {
@@ -2362,9 +2385,10 @@ function buildCardQuickActions(item) {
     } else {
       // showError() écrit dans un bandeau qui n'est pas visible sur cette
       // page (listes films/séries, recherche) : feedback local sur l'icône
-      // elle-même pour que l'échec ne passe pas inaperçu.
+      // elle-même, plus un toast, pour que l'échec ne passe pas inaperçu.
       favBtn.innerHTML = '<i data-lucide="alert-triangle"></i>';
       favBtn.title = "Échec de la mise à jour des favoris.";
+      showToast('Impossible de mettre à jour les favoris.', 'error');
       setTimeout(syncFavIcon, 1800);
     }
     favBtn.disabled = false;
@@ -2408,8 +2432,10 @@ async function quickDownloadFilm(item, btn) {
     if (!res.ok) throw new Error(data.error || "Erreur d'extraction.");
     if (!data.options || !data.options.length) throw new Error('Aucune option de téléchargement trouvée.');
     const option = data.options[0];
+    const title = data.title || item.title;
+    const wasIdle = !filmQueueBusy && filmQueue.length === 0;
     queueFilmDownload({
-      title: data.title || item.title,
+      title,
       poster: data.poster || item.poster,
       sourceUrl: item.url,
       dataUrl: option.data_url,
@@ -2418,9 +2444,13 @@ async function quickDownloadFilm(item, btn) {
       watchOnly: false,
     });
     btn.innerHTML = '<i data-lucide="check"></i>';
+    showToast(wasIdle
+      ? `« ${title} » est en cours de téléchargement`
+      : `« ${title} » ajouté à la file d'attente de téléchargement`);
   } catch (e) {
     btn.innerHTML = '<i data-lucide="alert-triangle"></i>';
     btn.title = e.message;
+    showToast(e.message, 'error');
   } finally {
     setTimeout(() => {
       btn.innerHTML = '<i data-lucide="download"></i>';
@@ -2859,6 +2889,34 @@ function refreshQueueUI() {
 function showError(msg) {
   errorBox.textContent = msg;
   errorBox.style.display = msg ? 'block' : 'none';
+}
+
+/* ---------- toasts: confirmation visible quelle que soit la page active,
+   contrairement à errorBox qui vit uniquement dans l'écran "Téléchargements"
+   (nécessaire pour les actions rapides lancées depuis une carte). ---------- */
+let toastStack = null;
+function showToast(message, type = 'success', duration = 3500) {
+  if (!toastStack) {
+    toastStack = document.createElement('div');
+    toastStack.className = 'toast-stack';
+    document.body.appendChild(toastStack);
+  }
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  const icon = type === 'error' ? 'alert-triangle' : 'download';
+  toast.innerHTML = `
+    <span class="toast-icon"><i data-lucide="${icon}"></i></span>
+    <span class="toast-text">${message}</span>
+    <button type="button" class="toast-close" aria-label="Fermer"><i data-lucide="x"></i></button>
+  `;
+  const remove = () => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 200);
+  };
+  toast.querySelector('.toast-close').addEventListener('click', remove);
+  toastStack.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('show'));
+  setTimeout(remove, duration);
 }
 
 function renderRatingAndSynopsis(ratingChipEl, synopsisEl, data) {
