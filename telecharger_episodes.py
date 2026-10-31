@@ -1042,9 +1042,14 @@ class FrenchStreamScraper:
                 # Le lecteur réel ne se charge qu'après un clic sur le bouton
                 # "play" (invisible, superposé à la bande-annonce qui joue en
                 # fond); sans ce clic, seul l'iframe de la bande-annonce apparaît.
-                # Un court délai est nécessaire pour laisser le JS du site
-                # attacher son gestionnaire de clic avant qu'on ne clique.
-                page.wait_for_timeout(1500)
+                # On attend que le bouton existe (borné, au lieu d'un sommeil
+                # fixe de 1,5s à chaque appel) puis une courte pause pour
+                # laisser le JS du site attacher son gestionnaire de clic.
+                try:
+                    page.wait_for_selector(".play-button", timeout=2000)
+                except Exception:
+                    pass
+                page.wait_for_timeout(300)
                 play_button = page.query_selector(".play-button")
                 if play_button:
                     try:
@@ -1067,7 +1072,10 @@ class FrenchStreamScraper:
                     }
                 """
 
-                def find_embed_url(attempts=4, delay=1200):
+                def find_embed_url(attempts=12, delay=400):
+                    # Même plafond total qu'avant (~4,8s) mais vérifié plus
+                    # souvent: sort dès que l'iframe apparaît au lieu d'attendre
+                    # le prochain des 4 gros intervalles de 1,2s.
                     url_found = None
                     for _ in range(attempts):
                         url_found = page.evaluate(find_embed_js)
@@ -1118,7 +1126,10 @@ class FrenchStreamScraper:
         host_page = browser.new_page()
         try:
             host_page.goto(host_page_url, wait_until="domcontentloaded", timeout=30000)
-            host_page.wait_for_timeout(1500)
+            try:
+                host_page.wait_for_selector('a[href*="_n"], a[href*="_o"]', timeout=1200)
+            except Exception:
+                pass  # aucun lien de qualité distinct: le repli ci-dessous s'applique
 
             options = []
             for key, suffix in QUALITY_SUFFIXES.items():
@@ -1163,7 +1174,10 @@ class FrenchStreamScraper:
         host_page = browser.new_page()
         try:
             host_page.goto(host_page_url, wait_until="domcontentloaded", timeout=30000)
-            host_page.wait_for_timeout(1500)
+            try:
+                host_page.wait_for_selector('a[href*="_n"], a[href*="_o"]', timeout=1200)
+            except Exception:
+                pass  # aucun lien de qualité distinct: le repli ci-dessous s'applique
 
             quality_link = None
             suffix = QUALITY_SUFFIXES.get(quality)
