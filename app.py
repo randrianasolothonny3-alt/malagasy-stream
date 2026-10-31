@@ -416,9 +416,27 @@ def api_latest():
     categories = SERIES_CATEGORIES if content_type == "serie" else FILM_CATEGORIES
     by_id = {c["id"]: c for c in categories}
     category_id = request.args.get("category") or categories[0]["id"]
-    if category_id not in by_id:
-        category_id = categories[0]["id"]
-    category = by_id[category_id]
+
+    # Recherche libre "Tapez une année" (champ du bloc "Par année"): id non
+    # répertorié statiquement, construit dynamiquement en xfsearch comme les
+    # entrées "annee-20xx" ci-dessus.
+    custom_year_match = (
+        content_type == "film" and category_id not in by_id
+        and re.fullmatch(r"annee-(\d{4})", category_id or "")
+    )
+    if custom_year_match:
+        year = custom_year_match.group(1)
+        category = {
+            "id": category_id,
+            "label": f"Films {year}",
+            "group": "annee",
+            "mode": "archive",
+            "params": {"do": "xfsearch", "xfname": "date-de-sortie", "xf": year},
+        }
+    else:
+        if category_id not in by_id:
+            category_id = categories[0]["id"]
+        category = by_id[category_id]
     try:
         page_num = max(1, int(request.args.get("page", 1)))
     except (TypeError, ValueError):
@@ -443,7 +461,7 @@ def api_latest():
         item["type"] = content_type
 
     return jsonify({
-        "categories": [{"id": c["id"], "label": c["label"]} for c in categories],
+        "categories": [{"id": c["id"], "label": c["label"], "group": c.get("group", "genre")} for c in categories],
         "active_category": category_id,
         "items": items,
         "page": page_num,

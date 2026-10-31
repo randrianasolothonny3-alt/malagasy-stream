@@ -268,6 +268,15 @@
     padding: 0;
   }
   .icon-btn:hover:not(:disabled) { background: rgba(var(--overlay-rgb), 0.08); transform: none; box-shadow: none; filter: none; }
+  .sidebar-toggle { display: none; flex: 0 0 auto; }
+  .sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(4, 5, 9, 0.55);
+    z-index: 29;
+  }
+  .sidebar-overlay.open { display: block; }
 
   .content { flex: 1; padding: 1.8rem 1.8rem 6.5rem; }
   .container { width: min(100%, 1400px); margin: 0 auto; }
@@ -727,6 +736,22 @@
   }
   .fav-remove-btn:disabled { opacity: 0.6; cursor: default; transform: none; }
 
+  /* ---------- actions rapides sur une carte (favori / téléchargement direct, sans ouvrir la fiche) ---------- */
+  .card-actions { position: absolute; top: 0.45rem; right: 0.45rem; z-index: 2; display: flex; flex-direction: column; gap: 0.35rem; }
+  .card-action-btn {
+    width: 1.9rem; height: 1.9rem; display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(10, 11, 18, 0.65); backdrop-filter: blur(3px);
+    color: #fff; font-size: 0.85rem; line-height: 1; cursor: pointer;
+    transition: background 150ms ease, color 150ms ease, border-color 150ms ease, transform 150ms ease;
+  }
+  .card-action-btn i { width: 15px; height: 15px; }
+  .card-action-btn:hover:not(:disabled) { transform: scale(1.1); box-shadow: none; filter: none; }
+  .card-action-btn:disabled { opacity: 0.7; cursor: default; transform: none; }
+  .card-fav-btn:hover:not(:disabled) { background: rgba(245, 180, 0, 0.25); border-color: rgba(245, 180, 0, 0.6); color: #f5b400; }
+  .card-fav-btn.active { background: rgba(245, 180, 0, 0.22); border-color: rgba(245, 180, 0, 0.55); color: #f5b400; }
+  .card-dl-btn:hover:not(:disabled) { background: rgba(0, 200, 83, 0.28); border-color: rgba(0, 200, 83, 0.6); color: var(--cyan-light); }
+
   /* ---------- site status filter (home search) ---------- */
   .site-filter { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
   .site-filter-chip {
@@ -760,6 +785,91 @@
   .site-badge { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.02em; padding: 0.2rem 0.5rem; border-radius: 999px; display: inline-block; margin-top: 0.3rem; }
   .site-badge-french-stream { background: rgba(244, 134, 37, 0.16); color: #ffb169; border: 1px solid rgba(244, 134, 37, 0.35); }
   .site-badge-anime-sama { background: rgba(232, 17, 45, 0.16); color: var(--accent-text); border: 1px solid rgba(255, 92, 92, 0.35); }
+
+  /* ---------- mega filter (films/séries: genre, langue, thème, sélections) ---------- */
+  .mega-filter-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem; position: relative; z-index: 31; }
+  .mega-filter-toggle.active { background: rgba(0, 200, 83, 0.12); border-color: rgba(0, 200, 83, 0.45); color: var(--cyan-text); }
+  .mega-filter-active { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .mega-filter-active-chip {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.4rem 0.4rem 0.4rem 0.8rem; border-radius: 999px;
+    background: rgba(0, 200, 83, 0.12); border: 1px solid rgba(0, 200, 83, 0.45);
+    color: var(--cyan-text); font-size: 0.8rem;
+  }
+  .mega-filter-active-chip button { background: none; border: none; color: inherit; cursor: pointer; display: grid; place-items: center; padding: 0.15rem; border-radius: 6px; }
+  .mega-filter-active-chip button:hover { background: rgba(0, 200, 83, 0.2); }
+  .mega-filter-backdrop {
+    display: none; position: fixed; inset: 0; z-index: 25;
+    background: rgba(var(--overlay-rgb), 0.28); backdrop-filter: blur(2px);
+    opacity: 0; transition: opacity 160ms ease;
+  }
+  .mega-filter-backdrop.open { display: block; opacity: 1; }
+  .mega-filter-panel {
+    position: absolute; top: calc(100% + 0.6rem); left: 0; right: 0; z-index: 30;
+    background: var(--panel-raised); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: 0 24px 55px rgba(0, 0, 0, 0.4);
+    padding: 1rem 1.2rem 1.2rem; max-height: 72vh; display: flex; flex-direction: column;
+    opacity: 0; transform: translateY(-8px) scale(0.99); visibility: hidden; pointer-events: none;
+    transition: opacity 160ms ease, transform 160ms ease, visibility 160ms;
+  }
+  .mega-filter-panel.open { opacity: 1; transform: none; visibility: visible; pointer-events: auto; }
+  .mega-filter-panel-head { display: flex; align-items: center; gap: 0.6rem; flex: 0 0 auto; margin-bottom: 0.9rem; padding-bottom: 0.8rem; border-bottom: 1px solid var(--border); }
+  .mega-filter-search { position: relative; flex: 1; min-width: 0; }
+  .mega-filter-search i { position: absolute; left: 0.7rem; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--text-faint); }
+  .mega-filter-search input {
+    width: 100%; padding: 0.5rem 0.7rem 0.5rem 2.1rem; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); font-size: 0.84rem;
+  }
+  .mega-filter-search input:focus { outline: none; border-color: rgba(0, 200, 83, 0.5); }
+  .mega-filter-close {
+    flex: 0 0 auto; width: 2rem; height: 2rem; display: grid; place-items: center; border-radius: 8px;
+    background: none; border: 1px solid var(--border); color: var(--text-soft); cursor: pointer; box-shadow: none;
+  }
+  .mega-filter-close:hover { background: rgba(var(--overlay-rgb), 0.08); color: var(--text); transform: none; box-shadow: none; filter: none; }
+  .mega-filter-close i { width: 16px; height: 16px; }
+  .mega-filter-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0; overflow-y: auto; padding-right: 0.2rem; }
+  .mega-filter-col { padding: 0 1.2rem; }
+  .mega-filter-col:first-child { padding-left: 0.1rem; }
+  .mega-filter-col:not(:first-child) { border-left: 1px solid var(--border); }
+  .mega-filter-col-title {
+    display: flex; align-items: center; gap: 0.45rem;
+    font-size: 0.72rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--accent-text); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; margin-bottom: 0.5rem;
+  }
+  .mega-filter-col-title i { width: 15px; height: 15px; }
+  .mega-filter-sub-title { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-faint); margin: 0.9rem 0 0.4rem; }
+  .mega-filter-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.1rem; }
+  .mega-filter-list.scroll { max-height: 230px; overflow-y: auto; padding-right: 0.3rem; }
+  .mega-filter-empty { display: none; grid-column: 1 / -1; text-align: center; padding: 1.4rem 0; color: var(--text-faint); font-size: 0.85rem; }
+  .mega-filter-reset {
+    flex: 0 0 auto; background: none; border: none; color: var(--cyan-text); font-size: 0.78rem;
+    font-weight: 600; cursor: pointer; padding: 0.3rem 0.5rem; box-shadow: none; white-space: nowrap;
+  }
+  .mega-filter-reset:hover { text-decoration: underline; transform: none; box-shadow: none; filter: none; }
+  body.mega-filter-lock-scroll { overflow: hidden; }
+  .mega-filter-item {
+    display: flex; align-items: center; gap: 0.5rem; width: 100%; text-align: left; background: none; border: none;
+    color: var(--text-soft); font-size: 0.82rem; padding: 0.32rem 0.3rem; border-radius: 6px; cursor: pointer; box-shadow: none;
+  }
+  .mega-filter-item i { width: 14px; height: 14px; flex: 0 0 auto; color: var(--text-faint); }
+  .mega-filter-item.active i { color: var(--cyan-text); }
+  .mega-filter-item:hover:not(:disabled) { color: var(--text); background: rgba(var(--overlay-rgb), 0.06); transform: none; box-shadow: none; filter: none; }
+  .mega-filter-item.active { color: var(--cyan-text); font-weight: 700; background: rgba(0, 200, 83, 0.1); }
+  .mega-filter-year-row { display: flex; gap: 0.4rem; margin-top: 0.5rem; }
+  .mega-filter-year-row input {
+    flex: 1; min-width: 0; padding: 0.4rem 0.6rem; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); font-size: 0.82rem;
+  }
+  .mega-filter-year-row button { padding: 0.4rem 0.6rem; }
+  .mega-filter-list.scroll::-webkit-scrollbar, .mega-filter-cols::-webkit-scrollbar { width: 6px; }
+  .mega-filter-list.scroll::-webkit-scrollbar-thumb, .mega-filter-cols::-webkit-scrollbar-thumb { background: rgba(var(--overlay-rgb), 0.18); border-radius: 999px; }
+  .mega-filter-list.scroll::-webkit-scrollbar-track, .mega-filter-cols::-webkit-scrollbar-track { background: transparent; }
+  .mega-filter-list.scroll, .mega-filter-cols { scrollbar-width: thin; scrollbar-color: rgba(var(--overlay-rgb), 0.18) transparent; }
+  @media (max-width: 720px) {
+    .mega-filter-panel { position: fixed; top: 4vh; left: 1rem; right: 1rem; max-height: 92vh; }
+    .mega-filter-cols { grid-template-columns: 1fr; }
+    .mega-filter-col:not(:first-child) { border-left: none; border-top: 1px solid var(--border); padding-top: 0.9rem; margin-top: 0.3rem; }
+  }
 
   /* ---------- dock bar ---------- */
   .dock-bar {
@@ -925,21 +1035,23 @@
 
   @media (max-width: 980px) {
     .app-shell { flex-direction: column; }
+    .sidebar-toggle { display: inline-grid; }
     .sidebar {
-      width: 100%;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: min(82vw, 300px);
       flex: 0 0 auto;
-      height: auto;
-      position: static;
-      flex-direction: row;
-      align-items: center;
-      padding: 0.8rem 1rem;
-      overflow-x: auto;
+      height: 100vh;
+      transform: translateX(-100%);
+      transition: transform 240ms ease;
+      z-index: 30;
+      box-shadow: 24px 0 60px rgba(0, 0, 0, 0.35);
+      overflow-y: auto;
     }
-    .sidebar-brand { padding: 0 1rem 0 0; flex: 0 0 auto; }
-    .brand-logo { width: auto; height: 2.2rem; max-width: 140px; }
-    .sidebar-nav { flex-direction: row; }
-    .nav-item { white-space: nowrap; }
-    .sidebar-stats, .sidebar-spacer, .sidebar-label { display: none; }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-brand { padding: 0.3rem 0.4rem 1.3rem; }
+    .brand-logo { width: 100%; height: auto; max-width: none; }
     .dock-bar { left: 0; }
     .topbar { flex-wrap: wrap; padding: 0.8rem 1rem; }
     .search-wrap { order: 3; flex: 1 1 100%; max-width: none; width: 100%; }
@@ -977,7 +1089,9 @@
 <body>
 <div class="app-shell">
 
-  <aside class="sidebar">
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+  <aside class="sidebar" id="sidebar">
     <div class="sidebar-brand">
       <img class="brand-logo" src="/static/logo.png" alt="Malagasy-Stream">
     </div>
@@ -1016,6 +1130,7 @@
 
   <div class="main-area">
     <header class="topbar">
+      <button type="button" class="icon-btn sidebar-toggle" id="sidebar-toggle" title="Menu" aria-label="Ouvrir le menu" aria-expanded="false"><i data-lucide="menu"></i></button>
       <div class="search-wrap">
         <span class="url-icon" aria-hidden="true"><i data-lucide="search"></i></span>
         <input type="text" id="filter-input" placeholder="Filtrer les épisodes affichés…" aria-label="Filtrer les épisodes">
@@ -1146,7 +1261,7 @@
           </div>
 
           <div class="panel" id="progress-panel" style="display:none;">
-            <div class="series-title">Téléchargement en cours</div>
+            <div class="series-title">Téléchargements</div>
             <div id="progress-list"></div>
             <div class="actions" id="retry-all-row" style="display:none;">
               <button type="button" class="secondary" id="retry-all-btn"><i data-lucide="rotate-ccw"></i> Réessayer les échecs</button>
@@ -1203,7 +1318,11 @@
               <input type="text" id="films-search-input" placeholder="Rechercher un film par titre…">
             </div>
           </div>
-          <div class="site-filter" id="films-category-filter"></div>
+          <div class="mega-filter-bar" id="films-mega-filter">
+            <button type="button" class="secondary mega-filter-toggle" id="films-filter-toggle" aria-haspopup="true" aria-expanded="false"><i data-lucide="sliders-horizontal"></i> Filtrer</button>
+            <div class="mega-filter-active" id="films-filter-active"></div>
+            <div class="mega-filter-panel" id="films-filter-panel"></div>
+          </div>
           <div class="catalogue-grid catalogue-grid-5col" id="films-grid"></div>
           <div class="muted" id="films-empty" style="display:none;">Chargement…</div>
           <div class="actions" id="films-pager"></div>
@@ -1218,7 +1337,11 @@
               <input type="text" id="series-search-input" placeholder="Rechercher une série par titre…">
             </div>
           </div>
-          <div class="site-filter" id="series-category-filter"></div>
+          <div class="mega-filter-bar" id="series-mega-filter">
+            <button type="button" class="secondary mega-filter-toggle" id="series-filter-toggle" aria-haspopup="true" aria-expanded="false"><i data-lucide="sliders-horizontal"></i> Filtrer</button>
+            <div class="mega-filter-active" id="series-filter-active"></div>
+            <div class="mega-filter-panel" id="series-filter-panel"></div>
+          </div>
           <div class="catalogue-grid catalogue-grid-5col" id="series-grid"></div>
           <div class="muted" id="series-empty" style="display:none;">Chargement…</div>
           <div class="actions" id="series-pager"></div>
@@ -1455,13 +1578,13 @@ const homeHeroDots = document.getElementById('home-hero-dots');
 const homeHeroPrev = document.getElementById('home-hero-prev');
 const homeHeroNext = document.getElementById('home-hero-next');
 const filmsPage = document.getElementById('films-page');
-const filmsCategoryFilter = document.getElementById('films-category-filter');
+const filmsCategoryFilter = document.getElementById('films-mega-filter');
 const filmsGrid = document.getElementById('films-grid');
 const filmsEmpty = document.getElementById('films-empty');
 const filmsPager = document.getElementById('films-pager');
 const filmsSearchInput = document.getElementById('films-search-input');
 const seriesPage = document.getElementById('series-page');
-const seriesCategoryFilter = document.getElementById('series-category-filter');
+const seriesCategoryFilter = document.getElementById('series-mega-filter');
 const seriesGrid = document.getElementById('series-grid');
 const seriesEmpty = document.getElementById('series-empty');
 const seriesPager = document.getElementById('series-pager');
@@ -1498,6 +1621,227 @@ function renderCategoryFilter(container, categories, activeId, onSelect) {
     label.querySelector('input').addEventListener('change', () => onSelect(cat.id));
     container.appendChild(label);
   });
+}
+
+/* ---------- mega-menu de filtre (genre / langue / thème / sélections), à la
+   French-Stream: colonnes construites depuis `categories` (groupées par le
+   champ `group` renvoyé par /api/latest), pas de liste codée en dur côté JS
+   pour rester synchronisé avec FILM_CATEGORIES/SERIES_CATEGORIES du backend. ---------- */
+const MEGA_FILTER_ITEM_ICONS = {
+  film: {
+    all: 'clapperboard', vf: 'captions', vostfr: 'subtitles',
+    'genre-action': 'zap', 'genre-aventure': 'compass', 'genre-animation': 'sparkles',
+    'genre-arts-martiaux': 'swords', 'genre-biopic': 'user', 'genre-comedie': 'laugh',
+    'genre-drame': 'drama', 'genre-documentaire': 'camera', 'genre-horreur': 'ghost',
+    'genre-historique': 'landmark', 'genre-espionnage': 'eye', 'genre-famille': 'users',
+    'genre-fantastique': 'wand-2', 'genre-guerre': 'shield', 'genre-policier': 'siren',
+    'genre-romance': 'heart', 'genre-science-fiction': 'rocket', 'genre-spectacle': 'mic-2',
+    'genre-thriller': 'alert-triangle', 'genre-western': 'mountain',
+    'selection-moment': 'flame', 'selection-cultes': 'crown',
+    'theme-aliens': 'orbit', 'theme-ia': 'cpu', 'theme-autisme': 'puzzle',
+    'theme-histoire-vraie': 'check-circle', 'theme-age-adulte': 'user-check', 'theme-drogue': 'pill',
+    'theme-catastrophe': 'cloud-lightning', 'theme-dystopie': 'building-2', 'theme-amitie': 'users',
+    'theme-braquage': 'lock', 'theme-espionnage': 'glasses', 'theme-lgbt': 'heart-handshake',
+    'theme-bagarre': 'swords', 'theme-maison-hantee': 'home', 'theme-romance': 'heart',
+    'theme-triangle-amoureux': 'triangle', 'theme-arts-martiaux': 'swords', 'theme-religion': 'sparkles',
+    'theme-vengeance': 'flame', 'theme-tueur-serie': 'skull', 'theme-slasher': 'alert-octagon',
+    'theme-voyage-spatial': 'rocket', 'theme-super-heros': 'zap', 'theme-survie': 'tent',
+    'theme-boucle-temporelle': 'repeat', 'theme-voyage-temporel': 'clock', 'theme-vampires': 'moon',
+    'theme-zombies': 'skull',
+  },
+  serie: {
+    all: 'tv', vf: 'captions', vostfr: 'subtitles', vosteng: 'languages',
+    'genre-action': 'zap', 'genre-aventure': 'compass', 'genre-animation': 'sparkles',
+    'genre-biopic': 'user', 'genre-comedie': 'laugh', 'genre-drame': 'drama',
+    'genre-documentaire': 'camera', 'genre-famille': 'users', 'genre-fantastique': 'wand-2',
+    'genre-thriller': 'alert-triangle', 'genre-romance': 'heart', 'genre-judiciaire': 'scale',
+    'genre-science-fiction': 'rocket', 'genre-historique': 'landmark', 'genre-medical': 'stethoscope',
+    'genre-policier': 'siren', 'genre-horreur': 'ghost', 'genre-western': 'mountain',
+    'genre-k-drama': 'heart', 'genre-tele-realite': 'camera',
+    'plateforme-prime': 'shopping-bag', 'plateforme-netflix': 'monitor-play',
+    'plateforme-disney': 'sparkles', 'plateforme-appletv': 'apple',
+    'selection-moment': 'flame',
+    'theme-animation-adulte': 'sparkles', 'theme-anthologie': 'layers', 'theme-bd': 'book-open',
+    'theme-roman': 'book', 'theme-californie': 'sun', 'theme-crime': 'siren',
+    'theme-enquetes': 'search', 'theme-espionnage': 'glasses', 'theme-amitie': 'users',
+    'theme-lycee': 'graduation-cap', 'theme-historique': 'landmark', 'theme-hopital': 'cross',
+    'theme-journalisme': 'newspaper', 'theme-avocats': 'scale', 'theme-militaire': 'shield',
+    'theme-mini-serie': 'layers', 'theme-meurtre': 'skull', 'theme-new-york': 'building-2',
+    'theme-politique': 'landmark', 'theme-post-apo': 'skull', 'theme-religion': 'sparkles',
+    'theme-vengeance': 'flame', 'theme-romance': 'heart', 'theme-sitcom': 'smile',
+    'theme-surnaturel': 'ghost', 'theme-survie': 'tent', 'theme-voyage-temporel': 'clock',
+    'theme-vampire': 'moon',
+  },
+};
+const MEGA_FILTER_GROUP_FALLBACK_ICON = {
+  genre: 'tag', langue: 'captions', pays: 'map-pin', theme: 'sparkles',
+  selection: 'star', annee: 'calendar', plateforme: 'tv',
+};
+function iconForCategory(type, cat) {
+  return (MEGA_FILTER_ITEM_ICONS[type] && MEGA_FILTER_ITEM_ICONS[type][cat.id])
+    || MEGA_FILTER_GROUP_FALLBACK_ICON[cat.group] || 'tag';
+}
+
+const MEGA_FILTER_COLUMNS = {
+  film: [
+    { title: 'Par genre', icon: 'tag', main: 'genre', scroll: true },
+    { title: 'Par langue', icon: 'captions', main: 'langue', sub: { group: 'pays', title: 'Films par pays', scroll: true } },
+    { title: 'Par thème', icon: 'drama', main: 'theme', scroll: true },
+    { title: 'Sélections', icon: 'bookmark', main: 'selection', sub: { group: 'annee', title: 'Par année', yearInput: true } },
+  ],
+  serie: [
+    { title: 'Par genre', icon: 'tag', main: 'genre', scroll: true },
+    { title: 'Par langue', icon: 'captions', main: 'langue' },
+    { title: 'Par thème', icon: 'drama', main: 'theme', scroll: true },
+    { title: 'Plateformes', icon: 'tv', main: 'plateforme', sub: { group: 'selection', title: 'Sélection' } },
+  ],
+};
+
+function normalizeFilterText(text) {
+  return (text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+function renderMegaFilter(wrapper, type, categories, activeId, onSelect) {
+  const toggle = wrapper.querySelector('.mega-filter-toggle');
+  const activeBox = wrapper.querySelector('.mega-filter-active');
+  const panel = wrapper.querySelector('.mega-filter-panel');
+  const columns = MEGA_FILTER_COLUMNS[type];
+
+  let backdrop = wrapper._megaFilterBackdrop;
+  if (!backdrop) {
+    backdrop = document.createElement('div');
+    backdrop.className = 'mega-filter-backdrop';
+    document.body.appendChild(backdrop);
+    wrapper._megaFilterBackdrop = backdrop;
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    backdrop.classList.add('open');
+    toggle.classList.add('active');
+    toggle.setAttribute('aria-expanded', 'true');
+    document.body.classList.add('mega-filter-lock-scroll');
+    const search = panel.querySelector('.mega-filter-search input');
+    if (search) { search.value = ''; filterItems(''); requestAnimationFrame(() => search.focus()); }
+  }
+
+  function closePanel() {
+    panel.classList.remove('open');
+    backdrop.classList.remove('open');
+    toggle.classList.remove('active');
+    toggle.setAttribute('aria-expanded', 'false');
+    document.body.classList.remove('mega-filter-lock-scroll');
+  }
+
+  function togglePanel() {
+    if (panel.classList.contains('open')) closePanel(); else openPanel();
+  }
+
+  function filterItems(query) {
+    const needle = normalizeFilterText(query.trim());
+    let anyVisibleTotal = false;
+    panel.querySelectorAll('.mega-filter-col').forEach(colEl => {
+      let anyVisible = false;
+      colEl.querySelectorAll('.mega-filter-list').forEach(ul => {
+        let visibleInList = false;
+        ul.querySelectorAll('li').forEach(li => {
+          const match = !needle || normalizeFilterText(li.textContent).includes(needle);
+          li.style.display = match ? '' : 'none';
+          if (match) visibleInList = true;
+        });
+        anyVisible = anyVisible || visibleInList;
+      });
+      colEl.style.display = (needle && !anyVisible) ? 'none' : '';
+      anyVisibleTotal = anyVisibleTotal || anyVisible;
+    });
+    const emptyNote = panel.querySelector('.mega-filter-empty');
+    if (emptyNote) emptyNote.style.display = (needle && !anyVisibleTotal) ? 'block' : 'none';
+  }
+
+  activeBox.innerHTML = '';
+  const activeCat = categories.find(c => c.id === activeId);
+  if (activeCat && activeCat.id !== categories[0].id) {
+    const chip = document.createElement('span');
+    chip.className = 'mega-filter-active-chip';
+    chip.innerHTML = `${activeCat.label} <button type="button" aria-label="Retirer le filtre"><i data-lucide="x"></i></button>`;
+    chip.querySelector('button').addEventListener('click', () => onSelect(categories[0].id));
+    activeBox.appendChild(chip);
+  }
+
+  function buildList(group, scroll) {
+    const ul = document.createElement('ul');
+    ul.className = 'mega-filter-list' + (scroll ? ' scroll' : '');
+    categories.filter(c => c.group === group).forEach(cat => {
+      const li = document.createElement('li');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'mega-filter-item' + (cat.id === activeId ? ' active' : '');
+      btn.innerHTML = `<i data-lucide="${iconForCategory(type, cat)}"></i> ${cat.label}`;
+      btn.addEventListener('click', () => { closePanel(); onSelect(cat.id); });
+      li.appendChild(btn);
+      ul.appendChild(li);
+    });
+    return ul;
+  }
+
+  panel.innerHTML = '';
+  const head = document.createElement('div');
+  head.className = 'mega-filter-panel-head';
+  const showReset = activeCat && activeCat.id !== categories[0].id;
+  head.innerHTML = `
+    <div class="mega-filter-search"><i data-lucide="search"></i><input type="text" placeholder="Rechercher un genre, un thème, un pays…"></div>
+    ${showReset ? '<button type="button" class="mega-filter-reset">Réinitialiser</button>' : ''}
+    <button type="button" class="mega-filter-close" aria-label="Fermer"><i data-lucide="x"></i></button>
+  `;
+  head.querySelector('.mega-filter-search input').addEventListener('input', e => filterItems(e.target.value));
+  head.querySelector('.mega-filter-close').addEventListener('click', closePanel);
+  if (showReset) head.querySelector('.mega-filter-reset').addEventListener('click', () => { closePanel(); onSelect(categories[0].id); });
+  panel.appendChild(head);
+
+  const colsWrap = document.createElement('div');
+  colsWrap.className = 'mega-filter-cols';
+  columns.forEach(col => {
+    const colEl = document.createElement('div');
+    colEl.className = 'mega-filter-col';
+    const h = document.createElement('div');
+    h.className = 'mega-filter-col-title';
+    h.innerHTML = `<i data-lucide="${col.icon}"></i> ${col.title}`;
+    colEl.appendChild(h);
+    colEl.appendChild(buildList(col.main, col.scroll));
+    if (col.sub) {
+      const subTitle = document.createElement('div');
+      subTitle.className = 'mega-filter-sub-title';
+      subTitle.textContent = col.sub.title;
+      colEl.appendChild(subTitle);
+      colEl.appendChild(buildList(col.sub.group, col.sub.scroll));
+      if (col.sub.yearInput) {
+        const row = document.createElement('div');
+        row.className = 'mega-filter-year-row';
+        row.innerHTML = '<input type="text" inputmode="numeric" placeholder="Ex: 1995" maxlength="4"><button type="button" class="secondary"><i data-lucide="arrow-right"></i></button>';
+        const yearInput = row.querySelector('input');
+        const submitYear = () => {
+          const year = yearInput.value.trim();
+          if (/^(19|20)\d{2}$/.test(year)) { closePanel(); onSelect(`annee-${year}`); }
+        };
+        row.querySelector('button').addEventListener('click', submitYear);
+        yearInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitYear(); });
+        colEl.appendChild(row);
+      }
+    }
+    colsWrap.appendChild(colEl);
+  });
+  const emptyNote = document.createElement('div');
+  emptyNote.className = 'mega-filter-empty';
+  emptyNote.textContent = 'Aucun filtre ne correspond à cette recherche.';
+  colsWrap.appendChild(emptyNote);
+  panel.appendChild(colsWrap);
+
+  if (!toggle.dataset.bound) {
+    toggle.dataset.bound = '1';
+    toggle.addEventListener('click', togglePanel);
+    backdrop.addEventListener('click', closePanel);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
+  }
 }
 
 function buildPageWindow(current, total, windowSize = 10) {
@@ -1587,7 +1931,7 @@ async function loadLatest(type, state, grid, emptyEl, filterEl, pagerEl) {
     if (!res.ok) throw new Error(data.error || 'Indisponible.');
     state.category = data.active_category;
     state.page = data.page;
-    renderCategoryFilter(filterEl, data.categories, data.active_category, id => {
+    renderMegaFilter(filterEl, type, data.categories, data.active_category, id => {
       state.category = id;
       state.page = 1;
       loadLatest(type, state, grid, emptyEl, filterEl, pagerEl);
@@ -1654,6 +1998,28 @@ function setupListSearch(input, type, state, grid, emptyEl, filterEl, pagerEl) {
 setupListSearch(filmsSearchInput, 'film', filmsState, filmsGrid, filmsEmpty, filmsCategoryFilter, filmsPager);
 setupListSearch(seriesSearchInput, 'serie', seriesState, seriesGrid, seriesEmpty, seriesCategoryFilter, seriesPager);
 
+/* ---------- burger menu (mobile) ---------- */
+const sidebarEl = document.getElementById('sidebar');
+const sidebarToggleBtn = document.getElementById('sidebar-toggle');
+const sidebarOverlay = document.getElementById('sidebar-overlay');
+function openSidebar() {
+  sidebarEl.classList.add('open');
+  sidebarOverlay.classList.add('open');
+  sidebarToggleBtn.setAttribute('aria-expanded', 'true');
+}
+function closeSidebar() {
+  sidebarEl.classList.remove('open');
+  sidebarOverlay.classList.remove('open');
+  sidebarToggleBtn.setAttribute('aria-expanded', 'false');
+}
+sidebarToggleBtn.addEventListener('click', () => {
+  sidebarEl.classList.contains('open') ? closeSidebar() : openSidebar();
+});
+sidebarOverlay.addEventListener('click', closeSidebar);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeSidebar();
+});
+
 /* ---------- sidebar navigation ---------- */
 document.querySelectorAll('.nav-item').forEach(item => {
   item.addEventListener('click', () => {
@@ -1661,6 +2027,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
       openPornoGate(() => item.click());
       return;
     }
+    closeSidebar();
     document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n === item));
     hideMainPanels();
     if (item.dataset.section === 'downloads') {
@@ -1842,25 +2209,24 @@ function updateFavoriteButtons() {
 }
 
 async function toggleFavorite(item) {
-  if (!item.url) return;
+  if (!item.url) { showError('Favori impossible: élément sans lien source.'); return false; }
   const isFav = favoriteUrls.has(item.url);
   try {
-    if (isFav) {
-      await fetch(`/api/favorites?url=${encodeURIComponent(item.url)}`, { method: 'DELETE' });
-      favoriteUrls.delete(item.url);
-    } else {
-      await fetch('/api/favorites', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(item),
-      });
-      favoriteUrls.add(item.url);
-    }
+    const res = isFav
+      ? await fetch(`/api/favorites?url=${encodeURIComponent(item.url)}`, { method: 'DELETE' })
+      : await fetch('/api/favorites', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(item),
+        });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (isFav) favoriteUrls.delete(item.url); else favoriteUrls.add(item.url);
   } catch (e) {
     showError("Impossible de mettre à jour les favoris.");
-    return;
+    return false;
   }
   updateFavoriteButtons();
+  return true;
 }
 
 function buildFavoriteCard(item) {
@@ -1963,8 +2329,105 @@ function buildSearchResultCard(item, showSite = true) {
     versionBadge.textContent = item.version;
     card.appendChild(versionBadge);
   }
+  card.appendChild(buildCardQuickActions(item));
   card.addEventListener('click', () => selectSearchResult(item));
   return card;
+}
+
+/* ---------- actions rapides directement sur une carte: favori et
+   téléchargement, sans passer par la fiche détaillée ni l'écran
+   « Téléchargements » (le film rejoint la file d'attente visible via le
+   dock en bas de l'écran). Pour une série, choisir langue/épisodes reste
+   nécessaire: l'icône ouvre la fiche comme un clic normal sur la carte. ---------- */
+function buildCardQuickActions(item) {
+  const wrap = document.createElement('div');
+  wrap.className = 'card-actions';
+
+  const favBtn = document.createElement('button');
+  favBtn.type = 'button';
+  favBtn.className = 'card-action-btn card-fav-btn';
+  const syncFavIcon = () => {
+    const isFav = !!item.url && favoriteUrls.has(item.url);
+    favBtn.classList.toggle('active', isFav);
+    favBtn.innerHTML = isFav ? '<i data-lucide="star" class="icon-filled"></i>' : '<i data-lucide="star"></i>';
+    favBtn.title = isFav ? 'Retirer des favoris' : 'Ajouter aux favoris';
+  };
+  syncFavIcon();
+  favBtn.addEventListener('click', async (event) => {
+    event.stopPropagation();
+    favBtn.disabled = true;
+    const ok = await toggleFavorite(item);
+    if (ok) {
+      syncFavIcon();
+    } else {
+      // showError() écrit dans un bandeau qui n'est pas visible sur cette
+      // page (listes films/séries, recherche) : feedback local sur l'icône
+      // elle-même pour que l'échec ne passe pas inaperçu.
+      favBtn.innerHTML = '<i data-lucide="alert-triangle"></i>';
+      favBtn.title = "Échec de la mise à jour des favoris.";
+      setTimeout(syncFavIcon, 1800);
+    }
+    favBtn.disabled = false;
+  });
+  wrap.appendChild(favBtn);
+
+  const dlBtn = document.createElement('button');
+  dlBtn.type = 'button';
+  dlBtn.className = 'card-action-btn card-dl-btn';
+  dlBtn.innerHTML = '<i data-lucide="download"></i>';
+  // Téléchargement direct possible seulement pour un film french-stream:
+  // /api/extract_film ne sait résoudre que ce site (anime-sama n'a pas
+  // d'équivalent "options de film", tout y est épisodique).
+  const canQuickDownload = item.type === 'film' && (!item.site || item.site === 'french-stream');
+  dlBtn.title = canQuickDownload ? 'Télécharger directement' : 'Choisir les épisodes à télécharger';
+  dlBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (canQuickDownload) {
+      quickDownloadFilm(item, dlBtn);
+    } else {
+      selectSearchResult(item);
+    }
+  });
+  wrap.appendChild(dlBtn);
+
+  return wrap;
+}
+
+async function quickDownloadFilm(item, btn) {
+  if (!item.url || btn.disabled) return;
+  btn.disabled = true;
+  const originalTitle = btn.title;
+  btn.innerHTML = '<span class="btn-spinner"></span>';
+  try {
+    const res = await fetch('/api/extract_film', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ url: item.url }),
+    });
+    const data = await safeJson(res);
+    if (!res.ok) throw new Error(data.error || "Erreur d'extraction.");
+    if (!data.options || !data.options.length) throw new Error('Aucune option de téléchargement trouvée.');
+    const option = data.options[0];
+    queueFilmDownload({
+      title: data.title || item.title,
+      poster: data.poster || item.poster,
+      sourceUrl: item.url,
+      dataUrl: option.data_url,
+      type: option.type,
+      isPorno: false,
+      watchOnly: false,
+    });
+    btn.innerHTML = '<i data-lucide="check"></i>';
+  } catch (e) {
+    btn.innerHTML = '<i data-lucide="alert-triangle"></i>';
+    btn.title = e.message;
+  } finally {
+    setTimeout(() => {
+      btn.innerHTML = '<i data-lucide="download"></i>';
+      btn.title = originalTitle;
+      btn.disabled = false;
+    }, 1800);
+  }
 }
 
 function buildPornoCard(item) {
@@ -2611,6 +3074,7 @@ function renderFilm() {
   filmPanel.style.display = 'block';
   filmFavoriteBtn.style.display = currentFilmIsPorno ? 'none' : '';
   updateFavoriteButtons();
+  updateFilmDownloadBtnLabel();
 }
 
 filmFavoriteBtn.addEventListener('click', () => {
@@ -2627,11 +3091,11 @@ filmFavoriteBtn.addEventListener('click', () => {
   });
 });
 
-async function postFilmDownload(watchOnly) {
-  const endpoint = currentFilmIsPorno ? '/api/download_porno' : '/api/download_film';
-  const body = currentFilmIsPorno
-    ? {title: currentFilm.title, url: selectedFilmOption.data_url, type: selectedFilmOption.type, source_url: currentUrl, watch_only: watchOnly}
-    : {title: currentFilm.title, data_url: selectedFilmOption.data_url, poster: currentFilm.poster, url: currentUrl, watch_only: watchOnly};
+async function postFilmDownload(payload) {
+  const endpoint = payload.isPorno ? '/api/download_porno' : '/api/download_film';
+  const body = payload.isPorno
+    ? {title: payload.title, url: payload.dataUrl, type: payload.type, source_url: payload.sourceUrl, watch_only: payload.watchOnly}
+    : {title: payload.title, data_url: payload.dataUrl, poster: payload.poster, url: payload.sourceUrl, watch_only: payload.watchOnly};
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -2642,39 +3106,143 @@ async function postFilmDownload(watchOnly) {
   return data;
 }
 
+/* ---------- file d'attente de téléchargement de films (un à la fois): chaque
+   film cliqué pendant qu'un autre télécharge déjà est ajouté à la file au
+   lieu de démarrer en parallèle, et sa ligne de progression reste affichée à
+   côté des autres au lieu de les effacer. ---------- */
+const filmQueue = [];
+let filmQueueBusy = false;
+let filmRowSeq = 0;
+
+function updateFilmDownloadBtnLabel() {
+  const busy = filmQueueBusy || filmQueue.length > 0;
+  filmDownloadBtn.innerHTML = busy
+    ? '<i data-lucide="list-plus"></i> Ajouter à la file d\'attente'
+    : '<i data-lucide="zap"></i> Télécharger';
+}
+
+function updateFilmQueuePositions() {
+  filmQueue.forEach((item, idx) => {
+    const badge = document.getElementById(`status-${item.key}`);
+    if (badge) badge.textContent = `en file d'attente (position ${idx + 1})`;
+  });
+}
+
+function createFilmRow(key, payload) {
+  progressPanel.style.display = 'block';
+  const row = document.createElement('div');
+  row.className = 'progress-item';
+  row.id = `row-${key}`;
+  row.innerHTML = `
+    <div class="progress-head">
+      <span>${payload.title}</span>
+      <span class="progress-head-right">
+        <span class="status-badge status-en_attente" id="status-${key}">en file d'attente</span>
+        <span class="progress-controls" id="controls-${key}"></span>
+      </span>
+    </div>
+    <div class="bar-bg"><div class="bar-fill" id="bar-${key}"></div></div>
+    <div class="muted" id="size-${key}"></div>
+  `;
+  progressList.appendChild(row);
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'ctrl-btn';
+  cancelBtn.innerHTML = '<i data-lucide="x"></i>';
+  cancelBtn.title = 'Retirer de la file';
+  cancelBtn.addEventListener('click', () => cancelQueuedFilm(key));
+  row.querySelector(`#controls-${key}`).appendChild(cancelBtn);
+  progressPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function cancelQueuedFilm(key) {
+  const idx = filmQueue.findIndex(item => item.key === key);
+  if (idx === -1) return; // déjà démarré: pas d'annulation en cours de route
+  filmQueue.splice(idx, 1);
+  const row = document.getElementById(`row-${key}`);
+  if (row) row.remove();
+  delete retryHandlers[key];
+  delete failedNumbers[key];
+  updateFilmQueuePositions();
+  updateFilmDownloadBtnLabel();
+}
+
+function queueFilmDownload(payload, existingKey) {
+  const key = existingKey || `f${filmRowSeq++}`;
+  if (existingKey) {
+    resetProgressRow(key);
+  } else {
+    createFilmRow(key, payload);
+  }
+  filmQueue.push({ key, payload });
+  updateFilmQueuePositions();
+  updateFilmDownloadBtnLabel();
+  pumpFilmQueue();
+  return key;
+}
+
+async function pumpFilmQueue() {
+  if (filmQueueBusy || !filmQueue.length) return;
+  filmQueueBusy = true;
+  const { key, payload } = filmQueue.shift();
+  updateFilmQueuePositions();
+  updateFilmDownloadBtnLabel();
+
+  let data;
+  try {
+    data = await postFilmDownload(payload);
+  } catch (e) {
+    const size = document.getElementById(`size-${key}`);
+    if (size) size.textContent = e.message;
+    const badge = document.getElementById(`status-${key}`);
+    if (badge) { badge.textContent = 'erreur'; badge.className = 'status-badge status-erreur'; }
+    failedNumbers[key] = true;
+    retryHandlers[key] = () => queueFilmDownload(payload, key);
+    updateRetryAllVisibility();
+    filmQueueBusy = false;
+    updateFilmDownloadBtnLabel();
+    pumpFilmQueue();
+    return;
+  }
+
+  retryHandlers[key] = () => queueFilmDownload(payload, key);
+  pollProgress(data.job_id, [{ num: 0, key }], () => {
+    filmQueueBusy = false;
+    updateFilmDownloadBtnLabel();
+    pumpFilmQueue();
+  });
+}
+
 async function startFilmJob(watchOnly) {
   if (!selectedFilmOption) { showError('Aucune option de téléchargement.'); return; }
   showError('');
 
-  let data;
-  try {
-    data = await postFilmDownload(watchOnly);
-  } catch (e) {
-    showError(e.message);
+  const payload = {
+    title: currentFilm.title,
+    poster: currentFilm.poster,
+    sourceUrl: currentUrl,
+    dataUrl: selectedFilmOption.data_url,
+    type: selectedFilmOption.type,
+    isPorno: currentFilmIsPorno,
+    watchOnly,
+  };
+
+  if (watchOnly) {
+    // Aperçu en ligne: action immédiate, jamais mise en file avec les téléchargements.
+    let data;
+    try {
+      data = await postFilmDownload(payload);
+    } catch (e) {
+      showError(e.message);
+      return;
+    }
+    const key = `f${filmRowSeq++}`;
+    createFilmRow(key, payload);
+    pollProgress(data.job_id, [{ num: 0, key }]);
     return;
   }
 
-  progressPanel.style.display = 'block';
-  progressList.innerHTML = '';
-  Object.keys(failedNumbers).forEach(key => delete failedNumbers[key]);
-  retryAllRow.style.display = 'none';
-  const row = document.createElement('div');
-  row.className = 'progress-item';
-  row.innerHTML = `
-    <div class="progress-head">
-      <span>${currentFilm.title}</span>
-      <span class="progress-head-right">
-        <span class="status-badge status-en_attente" id="status-0">en attente</span>
-        <span class="progress-controls" id="controls-0"></span>
-      </span>
-    </div>
-    <div class="bar-bg"><div class="bar-fill" id="bar-0"></div></div>
-    <div class="muted" id="size-0"></div>
-  `;
-  progressList.appendChild(row);
-  retryHandlers[0] = retryFilmDownload;
-
-  pollProgress(data.job_id, [0]);
+  queueFilmDownload(payload);
 }
 
 filmDownloadBtn.addEventListener('click', () => startFilmJob(false));
@@ -2792,9 +3360,6 @@ async function startSeriesJob(watchOnly) {
   if (!res.ok) { showError(data.error || 'Erreur de démarrage du téléchargement.'); return; }
 
   progressPanel.style.display = 'block';
-  progressList.innerHTML = '';
-  Object.keys(failedNumbers).forEach(key => delete failedNumbers[key]);
-  retryAllRow.style.display = 'none';
   numbers.forEach(num => {
     const row = document.createElement('div');
     row.className = 'progress-item';
@@ -2842,6 +3407,13 @@ function updateRetryAllVisibility() {
     retryAllRow.style.display = 'none';
   }
 }
+
+retryAllBtn.addEventListener('click', () => {
+  Object.keys(failedNumbers).forEach(key => {
+    const retryFn = retryHandlers[key];
+    if (retryFn) retryFn();
+  });
+});
 
 const videoModalOverlay = document.getElementById('video-modal-overlay');
 const videoModalPlayer = document.getElementById('video-modal-player');
@@ -3116,8 +3688,8 @@ async function uploadSubtitle(url, file) {
   if (!res.ok) throw new Error('Échec de l’envoi du sous-titre.');
 }
 
-function renderProgressControls(jobId, num, ep) {
-  const controls = document.getElementById(`controls-${num}`);
+function renderProgressControls(jobId, num, key, ep) {
+  const controls = document.getElementById(`controls-${key}`);
   if (!controls) return;
 
   if (ep.status === 'telechargement') {
@@ -3171,29 +3743,35 @@ function renderProgressControls(jobId, num, ep) {
   }
 }
 
-function pollProgress(jobId, numbers) {
+function pollProgress(jobId, slots, onDone) {
+  // `slots`: numéros d'épisode bruts (séries, une seule ligne par numéro à la
+  // fois) OU objets {num, key} (films: `num` est toujours 0 côté backend,
+  // `key` est l'identifiant de ligne stable côté client, indépendant du
+  // job_id, pour que plusieurs films affichent chacun leur propre ligne et
+  // que « Réessayer » puisse relancer un nouveau job sur la même ligne).
+  const normalized = slots.map(s => (s !== null && typeof s === 'object') ? s : { num: s, key: s });
   activePolls++;
   const interval = setInterval(async () => {
     const res = await fetch(`/api/progress/${jobId}`);
-    if (!res.ok) { clearInterval(interval); activePolls--; updateRetryAllVisibility(); return; }
+    if (!res.ok) { clearInterval(interval); activePolls--; updateRetryAllVisibility(); if (onDone) onDone(); return; }
     const job = await safeJson(res);
 
-    numbers.forEach(num => {
+    normalized.forEach(({ num, key }) => {
       const ep = job.episodes[num] ?? job.episodes[String(num)];
       if (!ep) return;
-      const badge = document.getElementById(`status-${num}`);
-      const bar = document.getElementById(`bar-${num}`);
-      const size = document.getElementById(`size-${num}`);
+      const badge = document.getElementById(`status-${key}`);
+      const bar = document.getElementById(`bar-${key}`);
+      const size = document.getElementById(`size-${key}`);
 
       const label = STATUS_LABELS[ep.status] || ep.status;
       badge.innerHTML = (ep.status === 'resolution' || ep.status === 'telechargement') ? loaderInline(label) : label;
       badge.className = 'status-badge status-' + ep.status;
 
       if (ep.quality_label) {
-        let qtag = document.getElementById(`qlabel-${num}`);
+        let qtag = document.getElementById(`qlabel-${key}`);
         if (!qtag) {
           qtag = document.createElement('span');
-          qtag.id = `qlabel-${num}`;
+          qtag.id = `qlabel-${key}`;
           qtag.className = 'chip chip-cyan';
           qtag.style.marginLeft = '6px';
           badge.insertAdjacentElement('afterend', qtag);
@@ -3201,11 +3779,11 @@ function pollProgress(jobId, numbers) {
         qtag.textContent = ep.quality_label;
       }
 
-      renderProgressControls(jobId, num, ep);
+      renderProgressControls(jobId, num, key, ep);
 
       updateTransfer(`${jobId}:${num}`, { downloaded: ep.downloaded, total: ep.total, status: ep.status });
 
-      if (ep.status !== 'erreur') delete failedNumbers[num];
+      if (ep.status !== 'erreur') delete failedNumbers[key];
 
       if (ep.total) {
         const pct = Math.round((ep.downloaded / ep.total) * 100);
@@ -3240,10 +3818,10 @@ function pollProgress(jobId, numbers) {
         }
       }
       if (ep.status === 'erreur') {
-        failedNumbers[num] = true;
+        failedNumbers[key] = true;
         size.innerHTML = '';
         size.appendChild(document.createTextNode(ep.error || 'Erreur inconnue'));
-        const retryFn = retryHandlers[num];
+        const retryFn = retryHandlers[key];
         if (retryFn) {
           const retryBtn = document.createElement('button');
           retryBtn.className = 'secondary';
@@ -3261,6 +3839,7 @@ function pollProgress(jobId, numbers) {
       clearInterval(interval);
       activePolls--;
       updateRetryAllVisibility();
+      if (onDone) onDone();
     }
   }, 1000);
 }
@@ -3297,18 +3876,6 @@ async function retrySeriesEpisode(num) {
   const data = await safeJson(res);
   if (!res.ok) { showError(data.error || 'Erreur au redémarrage.'); return; }
   pollProgress(data.job_id, [num]);
-}
-
-async function retryFilmDownload() {
-  resetProgressRow(0);
-  let data;
-  try {
-    data = await postFilmDownload();
-  } catch (e) {
-    showError(e.message);
-    return;
-  }
-  pollProgress(data.job_id, [0]);
 }
 
 renderTopbarBadges();
